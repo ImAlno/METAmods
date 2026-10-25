@@ -1,0 +1,123 @@
+package se.metacraft.skins.ui;
+
+import se.metacraft.skins.ApplyResult;
+import se.metacraft.skins.OwnershipChange;
+import net.minecraft.ChatFormatting;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundSoundPacket;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+
+import java.util.Optional;
+
+/**
+ * What a player is told about their skins, in chat and on the action bar, with a sound only they
+ * hear. Shared by the commands and the menus, which word every refusal through {@link #whyNot}.
+ * The wording is placeholder.
+ */
+public final class Feedback {
+	private Feedback() {}
+
+	/** A Claim, or an admin's grant: the same message either way. */
+	public static void claimed(ServerPlayer player, String skinName) {
+		tell(player, Component.literal("✨ You now own " + skinName + "! Open /skins to apply it.").withStyle(ChatFormatting.GOLD));
+		sound(player, SoundEvents.UI_TOAST_CHALLENGE_COMPLETE);
+	}
+
+	public static void revokedByAdmin(ServerPlayer player, String skinName) {
+		tell(player, Component.literal(skinName + " was removed from your skins by an admin.").withStyle(ChatFormatting.YELLOW));
+	}
+
+	public static void applied(ServerPlayer player, String skinName, String itemName, Optional<String> replaced) {
+		tell(player, Component.literal("✔ " + skinName + " applied to your " + itemName + replaced.map(r -> " (replaced " + r + ")").orElse(""))
+				.withStyle(ChatFormatting.GREEN));
+		sound(player, SoundEvents.SMITHING_TABLE_USE);
+	}
+
+	public static void removed(ServerPlayer player, String skinName) {
+		tell(player, Component.literal(skinName + " removed. Its item reverts wherever it is.").withStyle(ChatFormatting.YELLOW));
+	}
+
+	public static void cancelled(ServerPlayer player) {
+		tell(player, Component.literal("Claim cancelled. You keep the token.").withStyle(ChatFormatting.GRAY));
+	}
+
+	/** The claim menu opening: the client shows nothing of a right-click with a token on its own. */
+	public static void pageTurn(ServerPlayer player) {
+		sound(player, SoundEvents.BOOK_PAGE_TURN);
+	}
+
+	/** Whom a refusal is worded for. */
+	public sealed interface Audience {
+		/**
+		 * The player whose skins they are, told in the first person: {@code verb} is what they tried
+		 * ("apply", "claim"), {@code unchanged} what is left as it was ("nothing changed", "you keep the token").
+		 */
+		record Owner(String verb, String unchanged) implements Audience {}
+
+		/** An admin acting on {@code player}'s skins; {@code dormantReason} is why the skin is Dormant, if it is. */
+		record Admin(String player, Optional<String> dormantReason) implements Audience {}
+	}
+
+	/**
+	 * Why a grant, revoke, remove or Claim was refused (anything but {@code DONE}), worded for
+	 * {@code to}. {@code skin} is the skin as they know it: its name for a player, its id for an admin.
+	 */
+	public static String whyNot(OwnershipChange result, String skin, Audience to) {
+		return switch (to) {
+			case Audience.Owner(var verb, var unchanged) -> switch (result) {
+				case ALREADY_OWNED -> "You already own " + skin + ".";
+				case NOT_OWNED, UNKNOWN_SKIN, DORMANT_SKIN -> "You can't " + verb + " " + skin + " right now, so " + unchanged + ".";
+				case NOT_APPLIED -> skin + " is on no item.";
+				case NO_TOKEN -> "That token isn't in your inventory any more.";
+				case DAMAGED_FILE -> "Your skins file is damaged, so " + unchanged + ". Ask an admin to fix it.";
+				case SAVE_FAILED -> "Your skins couldn't be saved, so " + unchanged + ". Try again later.";
+				case DONE -> throw new IllegalArgumentException("not a refusal: " + result);
+			};
+			case Audience.Admin(var player, var dormantReason) -> switch (result) {
+				case ALREADY_OWNED -> player + " already owns " + skin + ".";
+				case NOT_OWNED -> player + " doesn't own " + skin + ".";
+				case NOT_APPLIED -> skin + " is on no item.";
+				case UNKNOWN_SKIN -> "There's no skin " + skin + ". /skins list shows them all.";
+				case DORMANT_SKIN -> skin + " is Dormant: " + dormantReason.orElse("its definition didn't load") + ".";
+				case DAMAGED_FILE -> player + "'s skins file is damaged and is never overwritten; fix it first. /skins info " + player + " says what's wrong.";
+				case SAVE_FAILED -> "Couldn't save " + player + "'s skins file, so nothing changed. The server log says why.";
+				case DONE, NO_TOKEN -> throw new IllegalArgumentException("not an admin's refusal: " + result);
+			};
+		};
+	}
+
+	/** Why an apply was refused (anything but {@code APPLIED}), told to the player; {@code skin} and {@code item} are named as they see them. */
+	public static String whyNot(ApplyResult.Outcome outcome, String skin, String item) {
+		Audience applying = new Audience.Owner("apply", "nothing changed");
+		return switch (outcome) {
+			case ALREADY_APPLIED -> "That " + item + " already has " + skin + ".";
+			case NO_ITEM, DOESNT_FIT -> "That " + item + " isn't there any more.";
+			case NOT_OWNED -> whyNot(OwnershipChange.NOT_OWNED, skin, applying);
+			case UNKNOWN_SKIN -> whyNot(OwnershipChange.UNKNOWN_SKIN, skin, applying);
+			case DORMANT_SKIN -> whyNot(OwnershipChange.DORMANT_SKIN, skin, applying);
+			case DAMAGED_FILE -> whyNot(OwnershipChange.DAMAGED_FILE, skin, applying);
+			case SAVE_FAILED -> whyNot(OwnershipChange.SAVE_FAILED, skin, applying);
+			case APPLIED -> throw new IllegalArgumentException("not a refusal: " + outcome);
+		};
+	}
+
+	/** Something the player asked for didn't happen: red text and the villager's "no". */
+	public static void failed(ServerPlayer player, String why) {
+		tell(player, Component.literal(why).withStyle(ChatFormatting.RED));
+		sound(player, SoundEvents.VILLAGER_NO);
+	}
+
+	private static void tell(ServerPlayer player, Component message) {
+		player.sendSystemMessage(message);
+		player.sendOverlayMessage(message);
+	}
+
+	private static void sound(ServerPlayer player, SoundEvent sound) {
+		player.connection.send(new ClientboundSoundPacket(BuiltInRegistries.SOUND_EVENT.wrapAsHolder(sound), SoundSource.MASTER,
+				player.getX(), player.getY(), player.getZ(), 1.0f, 1.0f, player.getRandom().nextLong()));
+	}
+}

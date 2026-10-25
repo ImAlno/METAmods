@@ -1,0 +1,24 @@
+// metacraft-skins — claimable item skins for vanilla clients (Polymer). The Skins class is the whole
+// domain; commands, the pack server and event listeners are thin adapters around it.
+version = project.skins_version
+
+// Polymer and sgui come jar-in-jar with metacraft-core.
+addCoreDependencies()
+addConfigDependency()
+// With metacraft-resource-packs installed the skins pack is a pack of its own that it serves
+// (compat/resource_packs). Never a `depends`: only that package names its types, behind
+// FabricLoader.isModLoaded. In the dev/test runtime so the game tests run that way.
+dependencies {
+	compileOnly project(path: ":mods:metacraft-resource-packs")
+	runtimeOnly project(path: ":mods:metacraft-resource-packs")
+}
+
+// The game tests run inside a server: JAVA_TOOL_OPTIONS="-Dfabric-api.gametest=true" ./gradlew
+// :mods:metacraft-skins:runServer. -PrunDir=<dir> sends a test run to a world of its own.
+loom {
+	runs {
+		server {
+			runDir = project.findProperty('runDir') ?: 'run'
+		}
+	}
+}
