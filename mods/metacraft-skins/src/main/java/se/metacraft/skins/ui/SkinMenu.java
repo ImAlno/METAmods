@@ -10,6 +10,7 @@ import se.metacraft.skins.OwnershipChange;
 import se.metacraft.skins.PerkLines;
 import se.metacraft.skins.PlayerSkins;
 import se.metacraft.skins.SkinFolder;
+import se.metacraft.skins.SkinMarker;
 import se.metacraft.skins.SkinSummary;
 import se.metacraft.skins.Skins;
 import net.minecraft.ChatFormatting;
@@ -35,7 +36,8 @@ import java.util.Optional;
  *       in its tooltip.</li>
  *   <li><b>"Apply: &lt;skin&gt;"</b> (4 rows), opened by clicking a skin: Back, a preview and, while
  *       the skin is applied, Remove along row 1; below, every item on the player the skin fits,
- *       hotbar to offhand, 27 a page, each saying where it is and what clicking it does. With more
+ *       hotbar to offhand, 27 a page, each shown as their own inventory shows it and saying where it
+ *       is and what clicking it does. With more
  *       than one page, arrows either side of the preview turn them. Clicking an item applies the
  *       skin and goes back to "Your Skins".</li>
  * </ul>
@@ -147,7 +149,7 @@ public final class SkinMenu {
 		List<Candidate> shown = candidates.subList(page * ITEMS_PER_PAGE, Math.min(candidates.size(), (page + 1) * ITEMS_PER_PAGE));
 		for (int i = 0; i < shown.size(); i++) {
 			Candidate candidate = shown.get(i);
-			GuiElementBuilder item = GuiElementBuilder.from(candidate.item().copy())
+			GuiElementBuilder item = GuiElementBuilder.from(asInTheirInventory(skins, player, candidate.item()))
 					.addLoreLine(Component.literal(candidate.where().label()).withStyle(ChatFormatting.GRAY));
 			if (candidate.alreadyHasIt()) {
 				item.addLoreLine(Component.literal("Already has this skin").withStyle(ChatFormatting.AQUA)).glow();
@@ -159,6 +161,16 @@ public final class SkinMenu {
 			gui.setSlot(FIRST_ITEM + i, item.setCallback(() -> apply(player, skins, skinId, name, candidate, fromPage, page)).build());
 		}
 		gui.open();
+	}
+
+	/**
+	 * An item on the player as their own inventory shows it, for a menu slot (which isn't their
+	 * inventory, so would draw it plain): a copy without the marker, drawn as being with them.
+	 */
+	private static ItemStack asInTheirInventory(Skins skins, ServerPlayer player, ItemStack item) {
+		ItemStack copy = item.copy();
+		copy.remove(SkinMarker.TYPE);
+		return skins.clientView(item, copy, player.getUUID());
 	}
 
 	private static void apply(ServerPlayer player, Skins skins, String skinId, String name, Candidate candidate,

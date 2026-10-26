@@ -65,12 +65,14 @@ import java.util.stream.Stream;
  * time it's sent to a viewer ({@link #liveSkin}, {@link #clientView}), so an item that went stale
  * (its skin moved, removed, overwritten, revoked, changed Kind, or from another world) or no longer
  * fits its skin (a netherite upgrade past the skin's Materials) is plain at
- * once wherever it is. The server also clears a stale marker when it next touches the item
+ * once wherever it is. A live item is <b>working</b> only while it's with its Owner (in their
+ * inventory, worn, in their offhand, on their cursor or in their ender chest); anywhere else it's
+ * Away, drawn plain, with no Perks. The server also clears a stale marker when it next touches the item
  * ({@link #revertStale}, driven by {@link StaleReverts}); a Dormant skin's markers are kept, so its
  * items come back when its definition does.
  *
- * <p>Perks go through liveness too: {@link #perks} reads them from the live skin's definition each
- * time, and {@link #updateLastingPerks} (every tick, for every player) keeps held and worn Perks in
+ * <p>Perks go through liveness too, and work only for the Owner: {@link #perks} reads them from the
+ * live skin's definition each time, and {@link #updateLastingPerks} (every tick, for every player) keeps held and worn Perks in
  * step with what each player holds and wears. Event Perks fire as the server reports each event
  * ({@link #hit}, {@link #killed}, {@link #brokeBlock}, {@link #hurt}), read from the live skin at that
  * moment. Tokens, menus and Skinned Items list them with {@link PerkLines}.
@@ -425,7 +427,7 @@ public final class Skins {
 		/** The skin shows, and its Perks work. */
 		LIVE,
 		/** Plain for now, but the marker stays: the skin is Dormant, or its Owner's file is damaged; either can come back. */
-		ASLEEP,
+		ON_HOLD,
 		/** Plain for good: moved, removed, overwritten, revoked, another world's, or a Kind change. */
 		STALE,
 		/**
@@ -437,8 +439,8 @@ public final class Skins {
 
 	private Standing standing(ItemStack stack, SkinMarker marker) {
 		Entry skin = skins.get(marker.skin());
-		if (skin == null || skin.loaded().isEmpty()) return Standing.ASLEEP;
-		if (!(ownership.read(marker.owner()) instanceof OwnershipStore.Readable(var record))) return Standing.ASLEEP;
+		if (skin == null || skin.loaded().isEmpty()) return Standing.ON_HOLD;
+		if (!(ownership.read(marker.owner()) instanceof OwnershipStore.Readable(var record))) return Standing.ON_HOLD;
 		if (!isCurrent(record, marker)) return Standing.STALE;
 		return fits(skin.loaded().get(), stack) ? Standing.LIVE : Standing.NO_LONGER_FITS;
 	}
@@ -594,17 +596,31 @@ public final class Skins {
 	}
 
 	/**
-	 * What a viewer is sent of this item: Polymer's client copy of it ({@code client}) dressed in
-	 * the live skin's Look and tooltip block. The Look is {@code item_model} {@code skins:<id>}; a
-	 * hat is also equippable on the head with no equipment asset, so the client draws the Look
-	 * there (the server's item, with its armour and abilities, is untouched). The tooltip block
-	 * follows vanilla's lines: "Skin: <Skin>" (gold), the Perk lines, the description (gray), "Owned by <player>"
-	 * (gray). The name and glint are left alone. A plain or stale item comes back as it was.
+	 * What a viewer is sent of this item: Polymer's client copy of it ({@code client}), as it is
+	 * {@code with} that player (null: with no one, such as in a chest, on the ground or in a frame;
+	 * the drawing check works it out, {@link DrawingCheck}).
+	 * <ul>
+	 *   <li><b>Working</b> (live, and with its Owner): dressed in the skin's Look and tooltip block. The
+	 *       Look is {@code item_model} {@code skins:<id>}; a hat is also equippable on the head with no
+	 *       equipment asset, so the client draws the Look there (the server's item, with its armour and
+	 *       abilities, is untouched). The tooltip block follows vanilla's lines: "Skin: <Skin>" (gold),
+	 *       the Perk lines, the description (gray), "Owned by <player>" (gray).</li>
+	 *   <li><b>Away</b> (live, with anyone else or no one): plain, with one gray line in place of the
+	 *       tooltip block, "<Skin> skin, only works for <Owner>".</li>
+	 *   <li>A plain, stale, Dormant or no longer fitting item comes back as it was.</li>
+	 * </ul>
+	 * The name and glint are left alone.
 	 */
-	public ItemStack clientView(ItemStack stack, ItemStack client) {
+	public ItemStack clientView(ItemStack stack, ItemStack client, @Nullable UUID with) {
 		Optional<LiveSkin> live = liveSkin(stack);
 		if (live.isEmpty()) return client;
 		LiveSkin skin = live.get();
+		if (!skin.owner().equals(with)) {
+			List<Component> lines = new ArrayList<>(client.getOrDefault(DataComponents.LORE, ItemLore.EMPTY).lines());
+			lines.add(plain(skin.name() + " skin, only works for " + skin.ownerName(), ChatFormatting.GRAY));
+			client.set(DataComponents.LORE, new ItemLore(lines));
+			return client;
+		}
 		client.set(DataComponents.ITEM_MODEL, Identifier.fromNamespaceAndPath(SkinFolder.NAMESPACE, skin.id()));
 		if (skin.kind().isHat()) {
 			Equippable worn = client.get(DataComponents.EQUIPPABLE);
@@ -629,32 +645,39 @@ public final class Skins {
 	}
 
 	/**
-	 * The Perks this item gives whoever holds or wears it: its live skin's, read from the skin's
-	 * definition now (so an edited definition changes every item at once). None for a plain, stale
-	 * or Dormant item, or while the settings switch Perks off.
+	 * The Perks this item gives {@code holder}, who holds or wears it: its live skin's, read from the
+	 * skin's definition now (so an edited definition changes every item at once), if the holder is
+	 * its Owner. None for anyone else, for a plain, stale or Dormant item, or while the settings
+	 * switch Perks off.
 	 */
-	public List<Perk> perks(ItemStack stack) {
-		return liveSkin(stack).map(LiveSkin::perks).orElse(List.of());
+	public List<Perk> perks(ItemStack stack, ServerPlayer holder) {
+		return working(stack, holder).map(LiveSkin::perks).orElse(List.of());
+	}
+
+	/** The item's live skin, if {@code holder} is its Owner: only then do its Perks work. */
+	private Optional<LiveSkin> working(ItemStack stack, ServerPlayer holder) {
+		return liveSkin(stack).filter(skin -> skin.owner().equals(holder.getUUID()));
 	}
 
 	/**
 	 * Brings the player's held and worn Perks in line with what they hold and wear now: held Perks
-	 * of the main-hand item (never the offhand), worn Perks of each armour slot. Potions and
+	 * of the main-hand item (never the offhand), worn Perks of each armour slot, each only if the
+	 * player is the item's Owner. Potions and
 	 * attribute modifiers whose item went (put away, moved, gone stale, Perks switched off) end at
 	 * once; auras and ambient sounds play on their interval. The server runs it for every player
 	 * every tick. Server thread only.
 	 */
 	public synchronized void updateLastingPerks(ServerPlayer player) {
 		List<LastingPerks.Placed> placed = new ArrayList<>();
-		place(placed, "held", Perk.Trigger.HELD, player.getMainHandItem());
+		place(placed, player, "held", Perk.Trigger.HELD, player.getMainHandItem());
 		for (EquipmentSlot slot : List.of(EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET)) {
-			place(placed, "worn/" + slot.getName(), Perk.Trigger.WORN, player.getItemBySlot(slot));
+			place(placed, player, "worn/" + slot.getName(), Perk.Trigger.WORN, player.getItemBySlot(slot));
 		}
 		lasting.update(player, placed);
 	}
 
-	private void place(List<LastingPerks.Placed> placed, String slot, Perk.Trigger trigger, ItemStack item) {
-		List<Perk> perks = perks(item);
+	private void place(List<LastingPerks.Placed> placed, ServerPlayer player, String slot, Perk.Trigger trigger, ItemStack item) {
+		List<Perk> perks = perks(item, player);
 		for (int i = 0; i < perks.size(); i++) if (perks.get(i).trigger() == trigger) placed.add(new LastingPerks.Placed(slot, i, perks.get(i)));
 	}
 
@@ -684,11 +707,11 @@ public final class Skins {
 		}
 	}
 
-	/** Event Perks fire only for a player in survival or adventure, never in creative or spectator. */
+	/** Event Perks fire only for the item's Owner, in survival or adventure, never in creative or spectator. */
 	private void fireEvent(ServerPlayer holder, ItemStack item, Perk.Trigger trigger, EventPerks.@Nullable Other other) {
 		// The game mode itself, not isCreative(): a game test's mock player always says creative there.
 		if (!holder.gameMode.getGameModeForPlayer().isSurvival()) return;
-		liveSkin(item).ifPresent(skin -> events.fire(holder, skin, trigger, other, settings().perksAffectPlayers()));
+		working(item, holder).ifPresent(skin -> events.fire(holder, skin, trigger, other, settings().perksAffectPlayers()));
 	}
 
 	/** A player left: every held and worn Perk this keeps up on them ends. Server thread only. */

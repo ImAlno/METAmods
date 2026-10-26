@@ -45,7 +45,7 @@ public final class MetacraftSkins implements ModInitializer {
 		// each viewer by Polymer; the live skin's Look and tooltip block go on that copy only.
 		PolymerItemUtils.ITEM_MODIFICATION_EVENT.register((original, client, context) -> {
 			Skins current = skins;
-			return current == null ? client : current.clientView(original, client);
+			return current == null ? client : DrawingCheck.draw(current, original, client, context);
 		});
 		// A right-click with a token in the main hand, on air, a block or an entity, is a Claim.
 		UseItemCallback.EVENT.register((player, level, hand) -> rightClick(player, hand));

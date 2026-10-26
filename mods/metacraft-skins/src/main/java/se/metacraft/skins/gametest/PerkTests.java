@@ -134,6 +134,45 @@ public final class PerkTests {
 		helper.succeed();
 	}
 
+	/**
+	 * Held and worn Perks are the Owner's only: lent to another player, the pick in their hand and
+	 * the crown on their head give them nothing, and back with the Owner both work again.
+	 */
+	@GameTest
+	public void heldAndWornPerksWorkOnlyForTheOwner(GameTestHelper helper) {
+		SkinFixtures fx = SkinFixtures.create().perky("green_pick", "pickaxe", HASTE_HELD).perky("circlet", "helmet", HEARTS_WORN);
+		fx.reload();
+		ServerPlayer alice = ApplyTests.carrying(helper, new ItemStack(Items.IRON_PICKAXE));
+		alice.setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.GOLDEN_HELMET));
+		ServerPlayer bob = ApplyTests.carrying(helper);
+		fx.skins.grant(alice.nameAndId(), "green_pick");
+		fx.skins.grant(alice.nameAndId(), "circlet");
+		fx.skins.apply(alice, "green_pick", ItemLocation.hotbar(0));
+		fx.skins.apply(alice, "circlet", ItemLocation.worn(EquipmentSlot.HEAD));
+
+		hand(alice, bob);
+		fx.skins.updateLastingPerks(alice);
+		fx.skins.updateLastingPerks(bob);
+		assertThat(!bob.hasEffect(MobEffects.HASTE) && bob.getMaxHealth() == 20, "the lent pick and crown give their holder " + bob.getEffect(MobEffects.HASTE)
+				+ " and " + bob.getMaxHealth() + " max health");
+		assertThat(fx.skins.perks(bob.getMainHandItem(), bob).isEmpty(), "the lent pick has Perks for its holder: " + fx.skins.perks(bob.getMainHandItem(), bob));
+		assertThat(fx.skins.perks(bob.getMainHandItem(), alice).size() == 1, "the lent pick lost its Perks for its Owner");
+
+		hand(bob, alice);
+		fx.skins.updateLastingPerks(bob);
+		fx.skins.updateLastingPerks(alice);
+		assertThat(alice.hasEffect(MobEffects.HASTE) && alice.getMaxHealth() == 24, "back with the Owner, the pick and crown give " + alice.getEffect(MobEffects.HASTE)
+				+ " and " + alice.getMaxHealth() + " max health");
+		helper.succeed();
+	}
+
+	/** Hands {@code from}'s first hotbar item and helmet to {@code to}, into the same places. */
+	private static void hand(ServerPlayer from, ServerPlayer to) {
+		to.getInventory().setItem(0, from.getInventory().removeItemNoUpdate(0));
+		to.setItemSlot(EquipmentSlot.HEAD, from.getItemBySlot(EquipmentSlot.HEAD));
+		from.setItemSlot(EquipmentSlot.HEAD, ItemStack.EMPTY);
+	}
+
 	/** The strongest potion wins, and the Perk never weakens or removes an effect from elsewhere, during or after. */
 	@GameTest
 	public void aLastingPotionNeverWeakensAnotherEffect(GameTestHelper helper) {
@@ -202,11 +241,11 @@ public final class PerkTests {
 		fx.skins.apply(player, "green_pick", ItemLocation.hotbar(0));
 		ItemStack pick = player.getInventory().getItem(0);
 		fx.skins.updateLastingPerks(player);
-		assertThat(player.hasEffect(MobEffects.HASTE) && fx.skins.perks(pick).size() == 1, "the pick's Perk doesn't work to begin with");
+		assertThat(player.hasEffect(MobEffects.HASTE) && fx.skins.perks(pick, player).size() == 1, "the pick's Perk doesn't work to begin with");
 
 		fx.settings("{ \"perks-enabled\": false }").reload();
 		fx.skins.updateLastingPerks(player);
-		assertThat(fx.skins.perks(pick).isEmpty(), "switched off, the pick still has " + fx.skins.perks(pick));
+		assertThat(fx.skins.perks(pick, player).isEmpty(), "switched off, the pick still has " + fx.skins.perks(pick, player));
 		assertThat(!player.hasEffect(MobEffects.HASTE), "switched off, the pick still gives Haste");
 		assertThat(fx.skins.liveSkin(pick).isPresent(), "switching Perks off took the Look too");
 
@@ -239,8 +278,8 @@ public final class PerkTests {
 		fx.skins.updateLastingPerks(player);
 		assertEffect(player, MobEffects.SPEED, 1, -1, "after the edit and reload");
 		assertThat(player.getMaxHealth() == 28, "after the edit and reload the crown gives " + player.getMaxHealth() + " max health");
-		Perk.Potion speed = (Perk.Potion) fx.skins.perks(player.getItemBySlot(EquipmentSlot.HEAD)).getFirst().effects().getFirst();
-		assertThat(speed.level() == 2, "perks(stack) reads " + speed);
+		Perk.Potion speed = (Perk.Potion) fx.skins.perks(player.getItemBySlot(EquipmentSlot.HEAD), player).getFirst().effects().getFirst();
+		assertThat(speed.level() == 2, "perks(stack, holder) reads " + speed);
 		helper.succeed();
 	}
 

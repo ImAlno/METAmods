@@ -350,9 +350,9 @@ public final class RevertTests {
 
 		assertThat(fx.skins.apply(alice, "candy_sword_test", ItemLocation.hotbar(0)).replaced().equals(Optional.of("Frost Blade")), "A didn't go over B");
 		assertThat(fx.skins.liveSkin(item).map(LiveSkin::id).equals(Optional.of("candy_sword_test")), "the Perks didn't switch to A at once: " + fx.skins.liveSkin(item));
-		assertThat(fx.skins.perks(item).stream().flatMap(p -> p.effects().stream())
-				.allMatch(e -> e instanceof Perk.Potion potion && potion.effect().equals(MobEffects.HASTE)) && fx.skins.perks(item).size() == 1,
-				"the item's Perks didn't switch to A's at once: " + fx.skins.perks(item));
+		assertThat(fx.skins.perks(item, alice).stream().flatMap(p -> p.effects().stream())
+				.allMatch(e -> e instanceof Perk.Potion potion && potion.effect().equals(MobEffects.HASTE)) && fx.skins.perks(item, alice).size() == 1,
+				"the item's Perks didn't switch to A's at once: " + fx.skins.perks(item, alice));
 		assertThat(state(fx.skins, bob) == OwnedSkin.State.UNAPPLIED, "B is " + state(fx.skins, bob));
 
 		assertThat(fx.skins.apply(bob, "frost", ItemLocation.hotbar(1)).applied(), "Bob couldn't move B");
@@ -573,7 +573,7 @@ public final class RevertTests {
 	}
 
 	private static Identifier model(GameTestHelper helper, SkinFixtures fx, ItemStack stack, ServerPlayer viewer) {
-		return ViewTests.view(helper, fx, stack, viewer).get(DataComponents.ITEM_MODEL);
+		return ViewTests.view(helper, fx, stack, viewer, viewer.getUUID()).get(DataComponents.ITEM_MODEL);
 	}
 
 	/** The state of the one skin the player owns. */

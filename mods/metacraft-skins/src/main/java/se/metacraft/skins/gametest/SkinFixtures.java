@@ -1,6 +1,7 @@
 package se.metacraft.skins.gametest;
 
 import com.mojang.authlib.GameProfile;
+import io.netty.buffer.ByteBuf;
 import io.netty.channel.embedded.EmbeddedChannel;
 import se.metacraft.skins.ReloadReport;
 import se.metacraft.skins.Skins;
@@ -8,9 +9,14 @@ import se.metacraft.skins.SkinsPack;
 import net.minecraft.gametest.framework.GameTestAssertException;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.network.Connection;
+import net.minecraft.network.ProtocolInfo;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.UnconfiguredPipelineHandler;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.BundlePacket;
 import net.minecraft.network.protocol.PacketFlow;
+import net.minecraft.network.protocol.game.ClientGamePacketListener;
+import net.minecraft.network.protocol.game.GameProtocols;
 import net.minecraft.network.protocol.game.ServerboundAcceptTeleportationPacket;
 import net.minecraft.network.protocol.game.ServerboundClientTickEndPacket;
 import net.minecraft.network.protocol.game.ServerboundPlayerLoadedPacket;
@@ -260,6 +266,39 @@ final class SkinFixtures {
 			channel.flushOutbound();
 			for (Object message = channel.readOutbound(); message != null; message = channel.readOutbound()) unpack(message, type, found);
 			return found;
+		}
+
+		/**
+		 * From now on, packets to them go through a real packet encoder, as on a server, so the mod's
+		 * packet mixin and the drawing check run as they do in play. Read them with {@link #received}.
+		 */
+		void encodeForReal() {
+			channel.pipeline().addLast("encoder", new UnconfiguredPipelineHandler.Outbound());
+			// Inside a ServerPlayer, a bare Connection is WaypointTransmitter's.
+			channel.pipeline().get(net.minecraft.network.Connection.class).setupOutboundProtocol(protocol());
+		}
+
+		/**
+		 * The packets of this type encoded for them since {@link #encodeForReal} or the last call, decoded as
+		 * a vanilla client decodes them, oldest first, bundles unpacked; any others are dropped.
+		 */
+		<T> List<T> received(Class<T> type) {
+			List<T> found = new ArrayList<>();
+			channel.flushOutbound();
+			var codec = protocol().codec();
+			for (Object message = channel.readOutbound(); message != null; message = channel.readOutbound()) {
+				if (!(message instanceof ByteBuf bytes)) continue;   // sent before encodeForReal
+				try {
+					unpack(codec.decode(bytes), type, found);
+				} finally {
+					bytes.release();
+				}
+			}
+			return found;
+		}
+
+		private ProtocolInfo<ClientGamePacketListener> protocol() {
+			return GameProtocols.CLIENTBOUND_TEMPLATE.bind(RegistryFriendlyByteBuf.decorator(level().getServer().registryAccess()));
 		}
 
 		private static <T> void unpack(Object message, Class<T> type, List<T> found) {

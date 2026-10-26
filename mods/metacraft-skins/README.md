@@ -6,8 +6,9 @@ need nothing but the resource pack the server sends them.
 An admin hands out **Skin Tokens**. A player right-clicks one and confirms, which **Claims** the skin:
 they become its **Owner**, and the token is used up. `/skins` opens the **Skin Menu**, where they put the
 skin on any item of its **Kind** they carry, which makes it a **Skinned Item**. A skin has a **Look** (a
-Blockbench model sent in the skins resource pack) and may have **Perks**, small effects that work for
-whoever holds or wears the item. Each skin is on one item at a time: applying it elsewhere makes the old
+Blockbench model sent in the skins resource pack) and may have **Perks**, small effects for its Owner
+while they hold or wear the item. A skin works only while its item is with its Owner; anywhere else the
+item is **Away**, drawn plain. Each skin is on one item at a time: applying it elsewhere makes the old
 item plain again, wherever it is.
 
 This README is the admin guide. Players get a short summary from the "How skins work" book in the Skin
@@ -35,7 +36,9 @@ module. Two mods are optional, and used when present:
   with the server's other packs, so adding a skin never changes the main pack's hash. Without it the
   skins' files go into the Polymer pack.
 
-The mod adds no mixins. The pack is required exactly when the server's packs are.
+The mod adds one mixin, on the packet encoder (`PacketEncoder.encode`), so it can tell where an item
+is drawn: in its Owner's inventory, on their head, in a chest, on the ground. The pack is required
+exactly when the server's packs are.
 
 ## Files
 
@@ -158,7 +161,7 @@ perks: [
 | `trigger` | required: `held`, `worn`, `hit`, `kill`, `block_break` or `hurt` |
 | `effects` | required: a list of at least one effect |
 | `chance` | optional, 0 to 1 (default 1): rolled each time the event happens. Event Triggers only |
-| `cooldown` | optional, seconds (default 0): per player, and follows the holder (see below). Event Triggers only |
+| `cooldown` | optional, seconds (default 0): the player's, kept per player (see below). Event Triggers only |
 | `tooltip` | optional: the Perk's line on tokens, menus and items, in place of the generated one |
 
 **Triggers each Kind allows.** Any other rejects the skin.
@@ -218,7 +221,8 @@ effect "minecraft:hast"`.
 
 **How Perks behave:**
 
-- Perks work for whoever holds or wears the item, not only its Owner.
+- Perks work only for the Owner, while the item is with them. Lent to another player, the item gives
+  them nothing: no held, worn or event Perks. Back with its Owner, it works again.
 - Lasting potions are topped up while the item is in place: their HUD icon shows, without swirl
   particles, and they end the moment the item is put away. They never weaken an effect from elsewhere:
   a stronger or equal one is left alone, and a weaker one comes back afterwards with its time left.
@@ -226,8 +230,8 @@ effect "minecraft:hast"`.
 - Timed potions use their own level and duration, and reset to full when they fire again: no added
   time, no added levels. A stronger effect the target already has wins, as in vanilla.
 - `chance` is rolled each time the event happens. A `cooldown` starts when the Perk fires, and it's the
-  player's: they wait it out even if they hand the item over and take it back, while the next holder
-  can fire it at once. Cooldowns live in memory, so a restart clears them.
+  player's: handing the item over and taking it back doesn't reset it. Cooldowns live in memory, so a
+  restart clears them.
 - With `perks-affect-players` off, `other` effects skip a target that is a player (its particles and
   sounds too): only mobs get them. The holder's own effects still fire. With `perks-enabled` off, no
   Perk works and none is listed; Looks stay. See [Settings](#settings).
@@ -422,10 +426,20 @@ Rules that answer most support questions:
   server touches the item: an online player's items within a tick, dropped and framed items in loaded
   chunks, a container when it's opened, an offline player's items when they join, anything in a chunk as
   it loads. A container nobody opens keeps a stale marker, which is harmless: it's never shown or used.
+- **Only with its Owner.** A Skinned Item shows its Look and gives Perks only while it's with its
+  Owner: in their inventory or hotbar, worn, in their offhand, on their cursor or in their ender chest.
+  Everyone who sees the Owner sees the hat on their head and the sword in their hand. Anywhere else the
+  item is **Away**: lent to another player, in a chest, barrel or shulker box, dropped, in an item frame,
+  on an armour stand, inside a bundle or shulker box item (even one the Owner carries), or in the slots
+  of a crafting table, smithing table, anvil or other workstation (the inventory's own 2×2 grid counts as
+  with them). An Away item keeps its skin, and `/skins info` and the Skin Menu still say Applied. It's
+  drawn plain and does nothing until it's back with its Owner; then it works again at once, with no old
+  Look left on anyone's screen.
 - **Duplicated copies** (a creative clone, a dupe) all carry the skin until the Owner moves or removes it;
   then only the new item does.
-- **Overwritten skins never come back.** Applying over someone else's skin makes theirs Unapplied (still
-  theirs). Removing the new skin later leaves the item plain.
+- **Overwritten skins never come back.** Applying over someone else's skin, an Away one included (a
+  sword lent to you), makes theirs Unapplied (still theirs). Removing the new skin later leaves the item
+  plain.
 - **What keeps a skin:** the anvil (renaming and repairing), the grindstone, enchanting and Mending. The
   smithing table's netherite upgrade keeps it only if the skin allows netherite (it has no `materials`,
   or lists `netherite`): a diamond-only skin falls off the upgraded item. So does a smithing result of
@@ -433,7 +447,8 @@ Rules that answer most support questions:
   Unapplied for its Owner when the server next touches the item. **Crafting-grid repair** makes a new item, so the skin is lost;
   the Owner applies it again.
 - **Tooltips.** A Skinned Item shows, after its own lines, "Skin: <Skin>" (gold), the Perk lines, and
-  "Owned by <player>" (the last known name of an offline Owner).
+  "Owned by <player>" (the last known name of an offline Owner). An Away item shows one gray line in
+  their place: "<Skin> skin, only works for <Owner>", as in "Candy Sword skin, only works for Alice".
 - **Tokens** stack to 64, can be traded and dropped, and are paper to recipes, villagers and workstations,
   none of which accept them. A token for a skin the viewer already owns says so and is kept when
   right-clicked. A Claim is a right-click with the token in the main hand, on air, a block or an entity;

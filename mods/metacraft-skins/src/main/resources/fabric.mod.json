@@ -33,6 +33,9 @@
 			"se.metacraft.skins.gametest.EventPerkTests"
 		]
 	},
+	"mixins": [
+		"metacraft-skins.mixins.json"
+	],
 	"depends": {
 		"fabricloader": ">=${loader_version}",
 		"minecraft": "~${minecraft_version}",

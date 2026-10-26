@@ -194,29 +194,58 @@ public final class EventPerkTests {
 	}
 
 	/**
-	 * {@code cooldown} is per player and follows the holder: after it fires, the same player waits
-	 * out the cooldown even after handing the sword over and taking it back, while the next holder
-	 * fires at once.
+	 * {@code cooldown} is the player's: after it fires, the Owner waits out the cooldown even after
+	 * handing the sword over and taking it back. In the other player's hand it fires nothing at all.
 	 */
 	@GameTest(maxTicks = 100)
 	public void aCooldownIsPerPlayerAndFollowsTheHolder(GameTestHelper helper) {
 		SkinFixtures fx = SkinFixtures.create().perky("slow_blade", "sword", """
 				[ { trigger: "hit", cooldown: 1, effects: [ { type: "heal", amount: 1 } ] } ]""");
 		fx.reload();
-		ServerPlayer first = holding(helper, fx, "slow_blade", new ItemStack(Items.IRON_SWORD));
-		ServerPlayer second = survivor(helper);
+		ServerPlayer owner = holding(helper, fx, "slow_blade", new ItemStack(Items.IRON_SWORD));
+		ServerPlayer other = survivor(helper);
 		LivingEntity pig = victim(helper);
-		assertThat(fires(fx, first, pig), "the first hit didn't fire");
-		assertThat(!fires(fx, first, pig), "a hit during the cooldown fired");
-		second.getInventory().setItem(0, first.getInventory().removeItemNoUpdate(0));
-		assertThat(fires(fx, second, pig), "the next holder waits out the first one's cooldown");
-		assertThat(!fires(fx, second, pig), "the next holder has no cooldown of their own");
-		first.getInventory().setItem(0, second.getInventory().removeItemNoUpdate(0));
-		assertThat(!fires(fx, first, pig), "handing the sword back reset the first holder's cooldown");
+		assertThat(fires(fx, owner, pig), "the first hit didn't fire");
+		assertThat(!fires(fx, owner, pig), "a hit during the cooldown fired");
+		other.getInventory().setItem(0, owner.getInventory().removeItemNoUpdate(0));
+		assertThat(!fires(fx, other, pig), "the sword's Perk fired for a player who isn't its Owner");
+		owner.getInventory().setItem(0, other.getInventory().removeItemNoUpdate(0));
+		assertThat(!fires(fx, owner, pig), "handing the sword over and back reset the Owner's cooldown");
 		helper.runAfterDelay(21, () -> {
-			assertThat(fires(fx, first, pig), "the cooldown didn't end after a second");
+			assertThat(fires(fx, owner, pig), "the cooldown didn't end after a second");
+			other.getInventory().setItem(0, owner.getInventory().removeItemNoUpdate(0));
+			assertThat(!fires(fx, other, pig), "the sword's Perk fired for another player once the cooldown was over");
 			helper.succeed();
 		});
+	}
+
+	/** No event Perk fires for a player who isn't the item's Owner: hit, kill, block break and hurt; back with the Owner, all four do. */
+	@GameTest
+	public void eventPerksFireOnlyForTheOwner(GameTestHelper helper) {
+		SkinFixtures fx = SkinFixtures.create().perky("busy_pick", "pickaxe", """
+				[ { trigger: "hit", effects: [ { type: "heal", amount: 1 } ] }, { trigger: "kill", effects: [ { type: "heal", amount: 1 } ] },
+				{ trigger: "block_break", effects: [ { type: "heal", amount: 1 } ] } ]""")
+				.perky("busy_cap", "helmet", "[ { trigger: \"hurt\", effects: [ { type: \"heal\", amount: 1 } ] } ]");
+		fx.reload();
+		ServerPlayer owner = holding(helper, fx, "busy_pick", new ItemStack(Items.IRON_PICKAXE));
+		wear(fx, owner, "busy_cap", new ItemStack(Items.IRON_HELMET));
+		ServerPlayer other = survivor(helper);
+		LivingEntity pig = victim(helper);
+		for (ServerPlayer[] handing : List.of(new ServerPlayer[] {owner, other}, new ServerPlayer[] {other, owner})) {
+			ServerPlayer from = handing[0], to = handing[1];
+			to.getInventory().setItem(0, from.getInventory().removeItemNoUpdate(0));
+			to.setItemSlot(EquipmentSlot.HEAD, from.getItemBySlot(EquipmentSlot.HEAD));
+			from.setItemSlot(EquipmentSlot.HEAD, ItemStack.EMPTY);
+			to.setHealth(10);
+			fx.skins.hit(to, pig);
+			fx.skins.killed(to, pig);
+			fx.skins.brokeBlock(to, helper.absolutePos(new BlockPos(4, 1, 4)));
+			fx.skins.hurt(to, pig);
+			float expected = to == owner ? 14 : 10;
+			assertThat(to.getHealth() == expected, (to == owner ? "back with the Owner" : "with another player") + " the four events healed them to "
+					+ to.getHealth() + ", not " + expected);
+		}
+		helper.succeed();
 	}
 
 	/** Did a hit fire the heal Perk? */

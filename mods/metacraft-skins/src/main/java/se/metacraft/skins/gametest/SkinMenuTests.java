@@ -4,6 +4,7 @@ import eu.pb4.sgui.api.containerwrappers.SlotBasedWrapperMenu;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMaps;
 import se.metacraft.skins.ItemLocation;
 import se.metacraft.skins.OwnedSkin;
+import se.metacraft.skins.SkinMarker;
 import se.metacraft.skins.ui.SkinMenu;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.core.component.DataComponents;
@@ -123,6 +124,43 @@ public final class SkinMenuTests {
 			click(player, FIRST_ITEM);
 			assertThat(player.heard.getLast().equals("That Golden Sword isn't there any more."), "the player was told " + player.heard);
 			assertThat(title(player).equals("Apply: Frost Blade"), "a failed apply went to " + title(player));
+		} finally {
+			helper.getLevel().getServer().getPlayerList().remove(player);
+		}
+		helper.succeed();
+	}
+
+	/**
+	 * The apply screen shows each item as it looks in the player's own inventory: their skinned
+	 * sword with its Look and tooltip block, a sword lent by someone else Away. No icon carries the marker.
+	 */
+	@GameTest
+	public void theApplyScreenShowsEachItemAsItLooksInTheirInventory(GameTestHelper helper) {
+		SkinFixtures fx = SkinFixtures.create().skin("candy_sword_test", "sword", "Candy Sword", null).skin("frost", "sword", "Frost Blade", null);
+		fx.reload();
+		SkinFixtures.Listening player = SkinFixtures.join(helper);
+		ServerPlayer bob = ApplyTests.carrying(helper, new ItemStack(Items.IRON_SWORD));
+		try {
+			player.getInventory().clearContent();
+			player.getInventory().setItem(0, new ItemStack(Items.DIAMOND_SWORD));
+			for (String skin : List.of("candy_sword_test", "frost")) fx.skins.grant(player.nameAndId(), skin);
+			fx.skins.apply(player, "frost", ItemLocation.hotbar(0));
+			fx.skins.grant(bob.nameAndId(), "frost");
+			fx.skins.apply(bob, "frost", ItemLocation.hotbar(0));
+			player.getInventory().setItem(1, bob.getInventory().removeItemNoUpdate(0));
+			SkinMenu.open(player, fx.skins);
+			click(player, 0);
+			assertThat(title(player).equals("Apply: Candy Sword"), "opened " + title(player));
+
+			ItemStack theirs = slot(player, FIRST_ITEM);
+			assertThat("skins:frost".equals(String.valueOf(theirs.get(DataComponents.ITEM_MODEL))), "their skinned sword shows " + theirs.get(DataComponents.ITEM_MODEL));
+			assertThat(lore(player, FIRST_ITEM).containsAll(List.of("Skin: Frost Blade", "Owned by " + player.getGameProfile().name(), "Hotbar slot 1")),
+					"their skinned sword reads " + lore(player, FIRST_ITEM));
+			ItemStack lent = slot(player, FIRST_ITEM + 1);
+			assertThat("minecraft:iron_sword".equals(String.valueOf(lent.get(DataComponents.ITEM_MODEL))), "the lent sword shows " + lent.get(DataComponents.ITEM_MODEL));
+			assertThat(lore(player, FIRST_ITEM + 1).contains("Frost Blade skin, only works for " + bob.getGameProfile().name()), "the lent sword reads "
+					+ lore(player, FIRST_ITEM + 1));
+			assertThat(!theirs.has(SkinMarker.TYPE) && !lent.has(SkinMarker.TYPE), "an icon carries the marker");
 		} finally {
 			helper.getLevel().getServer().getPlayerList().remove(player);
 		}

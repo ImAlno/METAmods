@@ -1,7 +1,10 @@
 package se.metacraft.skins.gametest;
 
 import com.mojang.brigadier.suggestion.Suggestion;
+import com.mojang.datafixers.util.Pair;
 import com.mojang.util.UndashedUuid;
+import eu.pb4.polymer.core.api.entity.PolymerEntityUtils;
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import se.metacraft.skins.ItemLocation;
 import se.metacraft.skins.MetacraftSkins;
@@ -23,9 +26,12 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundContainerSetContentPacket;
+import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
 import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
+import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
 import net.minecraft.network.protocol.game.ClientboundSoundPacket;
 import net.minecraft.network.protocol.game.ClientboundSwingAnimationPacket;
+import net.minecraft.network.protocol.game.GameProtocols;
 import net.minecraft.network.protocol.game.ServerboundContainerClosePacket;
 import net.minecraft.network.protocol.game.ServerboundInteractPacket;
 import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
@@ -74,7 +80,7 @@ import static se.metacraft.skins.gametest.SkinFixtures.assertThat;
  * metacraft-resource-packs' pack server at the address players are pushed; {@code /skins grant},
  * {@code revoke} and {@code info} work on online and offline players, tell an online one, and
  * tab-complete skin ids; {@code /skins} opens the Skin Menu; a Skinned Item, a vanilla diamond
- * sword, reaches every viewer through Polymer's per-viewer pipeline wearing its Look; and
+ * sword, reaches players through real packet encoders wearing its Look while it's with its Owner; and
  * {@code /skins give} hands out Skin Tokens, which a real right-click claims; and the server keeps
  * a worn Perk up on its own, ending it soon after the item comes off; and a real melee hit, kill,
  * block break and hurt fire their event Perks. One test, because it swaps
@@ -334,11 +340,12 @@ public final class SkinsCommandTests {
 	}
 
 	/**
-	 * {@code /skins} opens "Your Skins". And the first build question of ticket 16: does Polymer's
-	 * per-viewer client stack reach a vanilla item that carries our hidden marker? The skinned
-	 * sword is encoded with the item codec as a packet to each viewer is (with that viewer's packet
-	 * context) and decoded as a vanilla client would: it arrives as a diamond sword wearing the
-	 * Look and tooltip block, without the marker component.
+	 * {@code /skins} opens "Your Skins". And does a Skinned Item reach players right, through the
+	 * real network path? Packets go through each player's own packet encoder, so the mod's packet
+	 * mixin, Polymer's per-viewer client stack and the drawing check all run, and are decoded as a
+	 * vanilla client would. The Owner's inventory slot arrives as a diamond sword wearing the Look and
+	 * tooltip block, as does their held sword to another player who sees them, without the marker
+	 * component. The same sword in someone else's inventory arrives Away.
 	 */
 	private static void skinMenuAndSkinnedItemsReachPlayers(GameTestHelper helper, SkinFixtures fx) {
 		MinecraftServer server = helper.getLevel().getServer();
@@ -356,20 +363,37 @@ public final class SkinsCommandTests {
 			assertThat(fx.skins.liveSkin(owner.getInventory().getItem(0)).isPresent(), "applying from /skins didn't skin the sword");
 
 			ItemStack sword = owner.getInventory().getItem(0);
-			for (ServerPlayer to : List.of(owner, viewer)) {
-				ItemStack received = sentTo(to, sword, server);
-				assertThat(received.is(Items.DIAMOND_SWORD), "the sword reached " + to.getGameProfile().name() + " as " + received);
-				assertThat(Identifier.parse("skins:candy_cane_test").equals(received.get(DataComponents.ITEM_MODEL)), "the sword reached a viewer with the Look "
+			owner.encodeForReal();
+			viewer.encodeForReal();
+			owner.inventoryMenu.sendAllDataToRemote();
+			ItemStack inTheirInventory = owner.received(ClientboundContainerSetContentPacket.class).stream().filter(p -> p.containerId() == 0)
+					.map(p -> p.items().get(36)).findFirst().orElseThrow(() -> SkinFixtures.fail("the Owner wasn't sent their inventory"));
+			viewer.connection.send(PolymerEntityUtils.setEntityContext(new ClientboundSetEquipmentPacket(owner.getId(),
+					List.of(Pair.of(EquipmentSlot.MAINHAND, sword))), owner));
+			ItemStack inTheirHand = viewer.received(ClientboundSetEquipmentPacket.class).stream().map(p -> p.getSlots().getFirst().getSecond())
+					.findFirst().orElseThrow(() -> SkinFixtures.fail("the viewer wasn't sent the Owner's equipment"));
+			for (ItemStack received : List.of(inTheirInventory, inTheirHand)) {
+				assertThat(received.is(Items.DIAMOND_SWORD), "the sword reached a player as " + received);
+				assertThat(Identifier.parse("skins:candy_cane_test").equals(received.get(DataComponents.ITEM_MODEL)), "the sword reached a player with the Look "
 						+ received.get(DataComponents.ITEM_MODEL));
-				List<String> lore = received.getOrDefault(DataComponents.LORE, ItemLore.EMPTY).lines().stream().map(Component::getString).toList();
+				List<String> lore = lore(received);
 				assertThat(lore.contains("Skin: candy_cane_test skin") && lore.getLast().equals("Owned by " + owner.getGameProfile().name()),
-						"the sword reached a viewer with the lore " + lore);
+						"the sword reached a player with the lore " + lore);
 				assertThat(!received.has(SkinMarker.TYPE), "the hidden marker reached a client as a component");
 			}
+			viewer.connection.send(new ClientboundContainerSetSlotPacket(0, 0, 36, sword));
+			ItemStack lent = viewer.received(ClientboundContainerSetSlotPacket.class).getFirst().getItem();
+			assertThat(lent.get(DataComponents.ITEM_MODEL).equals(Identifier.parse("minecraft:diamond_sword"))
+					&& lore(lent).getLast().equals("candy_cane_test skin skin, only works for " + owner.getGameProfile().name()),
+					"the sword in someone else's inventory reached them as " + lent.get(DataComponents.ITEM_MODEL) + ", " + lore(lent));
 		} finally {
 			server.getPlayerList().remove(owner);
 			server.getPlayerList().remove(viewer);
 		}
+	}
+
+	private static List<String> lore(ItemStack stack) {
+		return stack.getOrDefault(DataComponents.LORE, ItemLore.EMPTY).lines().stream().map(Component::getString).toList();
 	}
 
 	/**
@@ -464,11 +488,15 @@ public final class SkinsCommandTests {
 		}
 	}
 
-	/** The stack as a vanilla client decodes it from a packet sent to {@code viewer}. */
+	/**
+	 * The stack as a vanilla client decodes it from an inventory slot packet sent to {@code viewer}:
+	 * the packet encoded by the game protocol's codec in the viewer's packet context, as their encoder would.
+	 */
 	private static ItemStack sentTo(ServerPlayer viewer, ItemStack stack, MinecraftServer server) {
-		RegistryFriendlyByteBuf buf = new RegistryFriendlyByteBuf(Unpooled.buffer(), server.registryAccess());
-		PacketContext.runWithContext(viewer.connection, () -> ItemStack.OPTIONAL_STREAM_CODEC.encode(buf, stack));
-		return ItemStack.OPTIONAL_STREAM_CODEC.decode(buf);
+		var codec = GameProtocols.CLIENTBOUND_TEMPLATE.bind(RegistryFriendlyByteBuf.decorator(server.registryAccess())).codec();
+		ByteBuf buf = Unpooled.buffer();
+		PacketContext.runWithContext(viewer.connection, () -> codec.encode(buf, new ClientboundContainerSetSlotPacket(0, 0, 36, stack)));
+		return ((ClientboundContainerSetSlotPacket) codec.decode(buf)).getItem();
 	}
 
 	private static List<String> suggestions(MinecraftServer server, String command) {
