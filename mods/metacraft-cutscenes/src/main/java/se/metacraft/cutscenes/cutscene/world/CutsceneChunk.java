@@ -17,6 +17,8 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.phys.AABB;
+import se.metacraft.cutscenes.compat.AntiXray;
+import se.metacraft.lib.compat.IsLoaded;
 
 public class CutsceneChunk extends LevelChunk {
 
@@ -39,15 +41,28 @@ public class CutsceneChunk extends LevelChunk {
 					}
 				},
 				() -> {
-					this.replaceWithPacketData(
-							chunk.getPos().x(), chunk.getPos().z(),
-							new ClientboundLevelChunkPacketData(chunk)
+					runAntiXray(
+						() -> {
+							this.replaceWithPacketData(
+								chunk.getPos().x(), chunk.getPos().z(),
+								new ClientboundLevelChunkPacketData(chunk)
+							);
+						},
+						chunk
 					);
 					this.setFullStatus(chunk::getFullStatus);
 					setLoaded(true);
 					registerAllBlockEntitiesAfterLevelLoad();
 				}
 		);
+	}
+
+	private static void runAntiXray(Runnable run, LevelChunk chunk) {
+		if (IsLoaded.ANTIXRAY.isLoaded()) {
+			AntiXray.runWithChunkPacketInfo(run, chunk);
+		} else {
+			run.run();
+		}
 	}
 
 	@Override

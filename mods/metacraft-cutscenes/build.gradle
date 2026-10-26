@@ -9,4 +9,5 @@ addProjectDependency(":mods:metacraft-resource-packs")
 
 dependencies {
 	implementation(include("org.objenesis:objenesis:${project.objenesis_version}"))
+	compileOnly("maven.modrinth:anti-xray:fabric-${project.antixray_version}")
 }
