@@ -92,4 +92,9 @@ public enum Material {
 	public static Optional<Material> of(ItemInstance item) {
 		return Optional.ofNullable(TABLE.get(item.typeHolder().value()));
 	}
+
+	/** Is this one of the four vanilla leather armour items, which vanilla dyes and washes itself? */
+	public static boolean leather(ItemInstance item) {
+		return TABLE.get(item.typeHolder().value()) == LEATHER;
+	}
 }

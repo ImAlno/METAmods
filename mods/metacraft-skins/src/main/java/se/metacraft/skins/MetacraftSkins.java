@@ -41,6 +41,7 @@ public final class MetacraftSkins implements ModInitializer {
 	public void onInitialize() {
 		SkinMarker.init();
 		SkinToken.init();
+		DyeSkinnedItemRecipe.init();
 		// Every stack carrying the (Polymer-hidden) marker, vanilla items included, is rebuilt for
 		// each viewer by Polymer; the live skin's Look and tooltip block go on that copy only.
 		PolymerItemUtils.ITEM_MODIFICATION_EVENT.register((original, client, context) -> {

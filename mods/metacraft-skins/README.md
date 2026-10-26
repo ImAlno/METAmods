@@ -157,8 +157,25 @@ that should take the colour (the felt of a hat, say, but not its band), then set
 - undyed, the hat shows its natural colours, exactly as exported;
 - dyed, its Tinted Parts take the helmet's colour wherever the hat is drawn (inventories, hands, the
   ground, frames, the wearer's head), and every other face keeps its painted colours;
-- players dye a leather helmet carrying it with dyes in the crafting grid and wash it in a water
-  cauldron, as for any leather armour, and it keeps the skin throughout.
+- players dye it as they dye leather armour, on any helmet the skin fits (leather, chainmail, copper,
+  iron, golden, diamond, netherite or a turtle shell): the helmet and dyes in the crafting grid, mixed as
+  vanilla mixes them. A water cauldron washes the colour off. The helmet keeps the skin throughout. A
+  plain helmet other than leather still refuses dye.
+
+Leather uses vanilla's dye recipe. Every other helmet uses the mod's own special recipe,
+`metacraft-skins:dye_skinned_item`, which takes only a helmet carrying a live Dyeable Hat (working or
+Away), never a plain one, a skin that isn't dyeable or a Dormant hat. For washing, the mod adds the seven
+other vanilla helmets to `#minecraft:cauldron_can_remove_dye` (by name, so another mod's helmets keep
+their own cauldron behaviour). A modded helmet carrying a Dyeable Hat with no `materials` dyes, but
+washes only if its own mod adds it to that tag.
+
+A helmet other than leather keeps a colour only while it carries a Dyeable Hat. When the hat leaves it
+(removed, moved to another item, revoked, overwritten by a skin that isn't dyeable, or `dyeable` turned
+off), the colour goes with it, when the server tidies the Owner's items (see
+[How items behave](#how-items-behave)); applying the hat again later shows its natural colours.
+Swapping one Dyeable Hat for another keeps the colour, and a leather helmet always keeps its dye, as in
+vanilla. Away, a dyed hat other than leather is drawn as a plain helmet, without its colour or its
+"Dyed" line.
 
 The mod makes the dyed version itself. It writes a grey copy of every texture a Tint face uses, at
 `skins:item/<skin-id>/dyed/<name>` (an animated texture's `.mcmeta` goes along), shading each pixel
@@ -396,7 +413,8 @@ A skin is **Dormant** while its folder is missing or its definition fails to loa
 deleted:
 
 - its Owners keep it (the Skin Menu hides it; `/skins info` shows it as Dormant);
-- its Skinned Items keep their marker but look vanilla and have no Perks;
+- its Skinned Items keep their marker but look vanilla and have no Perks; a Dormant Dyeable Hat keeps
+  its helmet's dye too (drawn without it until the skin is back);
 - its tokens read "Unknown skin token: <id>" and can't be claimed, and `/skins give` refuses it.
 
 Fix the definition (or put the folder back) and run `/skins reload`, and everything comes back
@@ -481,7 +499,8 @@ Rules that answer most support questions:
 - **Overwritten skins never come back.** Applying over someone else's skin, an Away one included (a
   sword lent to you), makes theirs Unapplied (still theirs). Removing the new skin later leaves the item
   plain.
-- **What keeps a skin:** the anvil (renaming and repairing), the grindstone, enchanting and Mending. The
+- **What keeps a skin:** the anvil (renaming and repairing), the grindstone, enchanting, Mending, and
+  dyeing and washing a Dyeable Hat (see [Writing a skin](#writing-a-skin)). The
   smithing table's netherite upgrade keeps it only if the skin allows netherite (it has no `materials`,
   or lists `netherite`): a diamond-only skin falls off the upgraded item. So does a smithing result of
   another Kind (only possible with data packs). A skin that falls off is plain at once and goes

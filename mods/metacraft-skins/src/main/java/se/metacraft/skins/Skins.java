@@ -5,6 +5,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.players.NameAndId;
@@ -243,9 +244,10 @@ public final class Skins {
 	 * skin is plain from now on, and the player's own items are tidied ({@link #tidy}). A skin
 	 * already on the item (theirs or another player's, live or Dormant) is replaced, and becomes
 	 * Unapplied for its Owner, who keeps owning it; if that Owner's file is damaged, it's left alone
-	 * (and logged). Refused, changing nothing, if the skin is unknown or Dormant, they don't own it,
-	 * nothing that {@linkplain #fits fits} is there (Material included), it already carries this
-	 * application, or their file is damaged or can't be saved.
+	 * (and logged). A skin that isn't a Dyeable Hat takes the colour off any item but leather (the
+	 * colour rule, {@link #tidy}). Refused, changing nothing, if the skin is unknown or Dormant, they
+	 * don't own it, nothing that {@linkplain #fits fits} is there (Material included), it already
+	 * carries this application, or their file is damaged or can't be saved.
 	 */
 	public synchronized ApplyResult apply(ServerPlayer player, String skinId, ItemLocation where) {
 		Entry skin = skins.get(skinId);
@@ -273,6 +275,7 @@ public final class Skins {
 		if (save(next) != OwnershipChange.DONE) return ApplyResult.refused(ApplyResult.Outcome.SAVE_FAILED);
 		if (current.isPresent() && !replacingTheirOwn) unapplyReplaced(current.get().marker());
 		item.set(SkinMarker.TYPE, new SkinMarker(skinId, player.getUUID(), application));
+		if (!loaded.dyeable() && !Material.leather(item)) item.remove(DataComponents.DYED_COLOR);
 		tidy(player);   // the skin's old item, if they have it
 		return new ApplyResult(ApplyResult.Outcome.APPLIED, current.map(Displaced::name));
 	}
@@ -442,7 +445,7 @@ public final class Skins {
 		if (marker == null || standing(stack, marker) != Standing.LIVE) return Optional.empty();
 		SkinFolder.Loaded loaded = skins.get(marker.skin()).loaded().orElseThrow();
 		Optional<String> ownerName = ownership.read(marker.owner()) instanceof OwnershipStore.Readable(var record) ? record.name() : Optional.empty();
-		return Optional.of(new LiveSkin(loaded.id(), loaded.name(), loaded.kind(), loaded.description(), inEffect(loaded.perks()),
+		return Optional.of(new LiveSkin(loaded.id(), loaded.name(), loaded.kind(), loaded.dyeable(), loaded.description(), inEffect(loaded.perks()),
 				marker.owner(), ownerName.orElse(marker.owner().toString())));
 	}
 
@@ -514,7 +517,10 @@ public final class Skins {
 	 * chest and cursor, and the shulker boxes and bundles among them. A stale marker is cleared, so the
 	 * item is plain for good; an item that carries a skin's current application but no longer fits it
 	 * loses the skin, which becomes Unapplied for its Owner. A Dormant skin's marker (or one whose
-	 * Owner's file is damaged) is kept, and so is a live one. Nothing else is ever searched: an item
+	 * Owner's file is damaged) is kept, and so is a live one. The colour rule: an item other than
+	 * leather may carry a colour ({@code dyed_color}) only while it carries a Dyeable Hat, live or
+	 * Dormant, so a cleared marker takes the colour with it, and so does a live skin that's no longer
+	 * dyeable; leather keeps its dye, as vanilla dyes and washes it. Nothing else is ever searched: an item
 	 * anywhere else keeps a stale marker, which is never shown or used. Vanilla then re-sends whatever
 	 * changed to the Owner and to anyone who sees them. Called by {@link #apply} itself, by the callers
 	 * of {@link #remove} and {@link #revoke} while the Owner is online, and as the Skin Menu opens.
@@ -535,6 +541,7 @@ public final class Skins {
 		SkinMarker marker = stack.get(SkinMarker.TYPE);
 		if (marker != null) {
 			Standing standing = standing(stack, marker);
+			if (strayColour(stack, marker, standing)) stack.remove(DataComponents.DYED_COLOR);
 			if (comesOff(standing)) {
 				stack.remove(SkinMarker.TYPE);
 				reverted++;
@@ -555,6 +562,12 @@ public final class Skins {
 		return standing == Standing.STALE || standing == Standing.NO_LONGER_FITS;
 	}
 
+	/** A colour the colour rule takes off: on an item other than leather, losing its skin or carrying a live one that isn't a Dyeable Hat. */
+	private boolean strayColour(ItemInstance item, SkinMarker marker, Standing standing) {
+		if (item.get(DataComponents.DYED_COLOR) == null || Material.leather(item)) return false;
+		return comesOff(standing) || standing == Standing.LIVE && !skins.get(marker.skin()).loaded().orElseThrow().dyeable();
+	}
+
 	/**
 	 * The items inside a shulker box or bundle item, read without copying ({@code items}); only if one
 	 * of them, or something inside it, has something to change are they copied, tidied and written back.
@@ -571,7 +584,10 @@ public final class Skins {
 	private boolean needsTidying(Iterable<ItemStackTemplate> items) {
 		for (ItemStackTemplate item : items) {
 			SkinMarker marker = item.get(SkinMarker.TYPE);
-			if (marker != null && comesOff(standing(item, marker))) return true;
+			if (marker != null) {
+				Standing standing = standing(item, marker);
+				if (comesOff(standing) || strayColour(item, marker, standing)) return true;
+			}
 			ItemContainerContents box = item.get(DataComponents.CONTAINER);
 			if (box != null && needsTidying(box.nonEmptyItems())) return true;
 			BundleContents bundle = item.get(DataComponents.BUNDLE_CONTENTS);
@@ -613,10 +629,15 @@ public final class Skins {
 	 *       tooltip block, "<Skin> skin, only works for <Owner>".</li>
 	 *   <li>A plain, stale, Dormant or no longer fitting item comes back as it was.</li>
 	 * </ul>
-	 * The name and glint are left alone.
+	 * A Skinned Item other than leather shows its colour only while it's working with a Dyeable Hat's
+	 * Look: in every other case (Away, stale, Dormant, no longer fitting, no longer dyeable) its copy
+	 * loses {@code dyed_color} and vanilla's "Dyed" line (Polymer's lore copy of it). Leather shows its
+	 * dye, as vanilla does. The name and glint are left alone.
 	 */
 	public ItemStack clientView(ItemStack stack, ItemStack client, @Nullable UUID with) {
 		Optional<LiveSkin> live = liveSkin(stack);
+		boolean dyedLook = live.filter(skin -> skin.dyeable() && skin.owner().equals(with)).isPresent();
+		if (!dyedLook && stack.has(SkinMarker.TYPE) && !Material.leather(stack)) uncoloured(client);
 		if (live.isEmpty()) return client;
 		LiveSkin skin = live.get();
 		if (!skin.owner().equals(with)) {
@@ -639,6 +660,21 @@ public final class Skins {
 		lines.add(plain("Owned by " + skin.ownerName(), ChatFormatting.GRAY));
 		client.set(DataComponents.LORE, new ItemLore(lines));
 		return client;
+	}
+
+	/** Takes the colour off a client copy: {@code dyed_color}, and the "Dyed" (or "Color: #…") line Polymer copied into its lore. */
+	private static void uncoloured(ItemStack client) {
+		client.remove(DataComponents.DYED_COLOR);
+		ItemLore lore = client.get(DataComponents.LORE);
+		if (lore == null) return;
+		List<Component> lines = lore.lines().stream().filter(line -> !dyedLine(line)).toList();
+		if (lines.size() != lore.lines().size()) client.set(DataComponents.LORE, new ItemLore(lines));
+	}
+
+	/** Vanilla's tooltip line for {@code dyed_color}, as Polymer copies a tooltip line into lore (wrapped in an empty component). */
+	private static boolean dyedLine(Component line) {
+		return Stream.concat(Stream.of(line), line.getSiblings().stream()).anyMatch(part -> part.getContents() instanceof TranslatableContents t
+				&& (t.getKey().equals("item.dyed") || t.getKey().equals("item.color")));
 	}
 
 	// ---- Perks

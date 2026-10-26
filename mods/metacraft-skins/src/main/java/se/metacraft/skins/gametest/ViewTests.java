@@ -5,6 +5,8 @@ import eu.pb4.polymer.core.api.entity.PolymerEntityUtils;
 import eu.pb4.polymer.core.api.item.PolymerItemUtils;
 import se.metacraft.skins.DrawingCheck;
 import se.metacraft.skins.ItemLocation;
+import se.metacraft.skins.MetacraftSkins;
+import se.metacraft.skins.Skins;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.fabricmc.fabric.api.networking.v1.context.PacketContext;
 import net.minecraft.ChatFormatting;
@@ -177,7 +179,7 @@ public final class ViewTests {
 		assertAway(drawnIn(helper, fx, alice, withTheBundle, inside), alice, "a sword inside a bundle the Owner carries");
 
 		PacketContext context = alice.connection.getPacketContext();
-		ItemStack unbound = DrawingCheck.draw(fx.skins, sword, PolymerItemUtils.getPolymerItemStack(sword, context, helper.getLevel().registryAccess()), context);
+		ItemStack unbound = DrawingCheck.draw(fx.skins, sword, polymerCopy(helper, sword, context), context);
 		assertAway(unbound, alice, "an encode with no packet bound");
 		alice.containerMenu = alice.inventoryMenu;
 		bob.containerMenu = bob.inventoryMenu;
@@ -207,8 +209,7 @@ public final class ViewTests {
 	 */
 	static ItemStack drawnIn(GameTestHelper helper, SkinFixtures fx, ServerPlayer viewer, Packet<?> packet, ItemStack stack) {
 		PacketContext context = viewer.connection.getPacketContext();
-		return ScopedValue.where(DrawingCheck.PACKET, packet).call(() -> DrawingCheck.draw(fx.skins, stack,
-				PolymerItemUtils.getPolymerItemStack(stack, context, helper.getLevel().registryAccess()), context));
+		return ScopedValue.where(DrawingCheck.PACKET, packet).call(() -> DrawingCheck.draw(fx.skins, stack, polymerCopy(helper, stack, context), context));
 	}
 
 	/** Any head armour, turtle shell included, shows the hat on the head and keeps its armour (the server's item is untouched). */
@@ -318,8 +319,22 @@ public final class ViewTests {
 
 	/** What Polymer sends this viewer for the server's stack, with {@code with} (null: no one), dressed by the test's Skins. */
 	static ItemStack view(GameTestHelper helper, SkinFixtures fx, ItemStack stack, ServerPlayer viewer, @Nullable UUID with) {
-		ItemStack client = PolymerItemUtils.getPolymerItemStack(stack, viewer.connection.getPacketContext(), helper.getLevel().registryAccess());
-		return fx.skins.clientView(stack, client, with);
+		return fx.skins.clientView(stack, polymerCopy(helper, stack, viewer.connection.getPacketContext()), with);
+	}
+
+	/**
+	 * Polymer's client copy of the stack, before any Skins draws it. The server's own Skins would draw
+	 * it first (Polymer runs the mod's callback), and it doesn't know the test's skins, so it would take
+	 * them for Dormant (and a non-leather item's colour with them). It's switched off within this call
+	 * only, on the server thread, so no other test sees it.
+	 */
+	static ItemStack polymerCopy(GameTestHelper helper, ItemStack stack, PacketContext context) {
+		Skins server = MetacraftSkins.use(null);
+		try {
+			return PolymerItemUtils.getPolymerItemStack(stack, context, helper.getLevel().registryAccess());
+		} finally {
+			MetacraftSkins.use(server);
+		}
 	}
 
 	private static Identifier model(ItemStack client) {
