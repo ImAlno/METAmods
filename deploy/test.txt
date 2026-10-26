@@ -99,6 +99,7 @@ external vcinteraction https://cdn.modrinth.com/data/qsSP2ZZ0/versions/AuH4GjYn/
 external worldedit https://cdn.modrinth.com/data/1u6JkXh5/versions/ByRNkO83/worldedit-mod-7.4.6.jar sha256:24f2338ac9d5e7205f15cdb4a118924c5d9cbd48ab0cabf8ba36b07b7d64c22b
 external vanish https://cdn.modrinth.com/data/UL4bJFDY/versions/KgeCcJWw/vanish-1.6.16%2B26.3.jar sha256:e518a65aa629935d4e0e4f90829835c17783f04d7e11ec7a8c2e65a0e69f5484
 external carpet https://cdn.modrinth.com/data/TQTTVgYE/versions/yt9oDFOj/fabric-carpet-26.3%2Bv260915.jar sha256:7c40b93e807ed914064176898037117097446c6cc76e6a80a856c8bf7f7659f9
+external carpet-tis-addition https://cdn.modrinth.com/data/jE0SjGuf/versions/GN7VqWFY/carpet-tis-addition-v1.82.4-mc26.3.jar sha256:9954fc8d148567b1c9f045671a69ecbb15e2627448c6dd10b048efed33c24cf4
 external nochatreports https://cdn.modrinth.com/data/qQyHxfxd/versions/6g96avt2/NoChatReports-FABRIC-26.3-v2.21.0.jar sha256:d346391bea7991ba5d5eb3c8308a414bfc6734d6d220bece84e76966c834b5bf
 external antixray https://cdn.modrinth.com/data/sml2FMaA/versions/AU5FnTTj/antixray-fabric-1.4.17%2B26.3.jar sha256:96f1148b7b680993c566a5c9157c6d2b5a8ad031c53b28257605e3dc295751f2
 external luckperms https://cdn.modrinth.com/data/Vebnzrzj/versions/DzQPkkXY/LuckPerms-Fabric-5.5.85.jar sha256:18598fcb95a83f6723d8bc68a905500ed5ecac92e9909ce1f25409cdebe2df49
