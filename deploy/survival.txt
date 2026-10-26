@@ -74,6 +74,7 @@ external styledchat https://cdn.modrinth.com/data/doqSKB0e/versions/HQ91YnMY/sty
 external puzzleslib https://cdn.modrinth.com/data/QAGBst4M/versions/vbwu116x/puzzleslib-v26.3.16-mc26.3.x%2Bfabric.jar sha256:ab95b755fa186c3683d86b7961f7f8b69685f83f588f36c444a47ebaea937b4b
 external forgeconfigapiport https://cdn.modrinth.com/data/ohNO6lps/versions/JpKvrr9J/ForgeConfigAPIPort-v26.3.1-mc26.3.x-Fabric.jar sha256:95cc2bd7a943f910a54baf2f65acde301dcfb3d8aeff2c989c04c416d5a4a1cd
 external debugify https://cdn.modrinth.com/data/QwxR6Gcd/versions/FMaS2nZn/debugify-26.3.0.0.jar sha256:88c86804997207a6438782fe4d42467cc797bec7de6e6a051cf8e2026a828f63
+external vmp https://cdn.modrinth.com/data/wnEe9KBa/versions/2TFDVjDf/vmp-fabric-mc26.3-0.2.0%2Bbeta.7.238-all.jar sha256:cd36d2943458042e7be1d1ac04e50c2275a01a713ca891bd45294e9225689a0a
 external discord-mc-chat https://cdn.modrinth.com/data/D0sHdnXY/versions/49RyYYsL/Discord-MC-Chat-2.7.1.jar sha256:8c91893cdf94b34a87774d7fd9d1525b7b8777fe404e08735d653ebcf924e7c9
 external disconnect-packet-fix https://cdn.modrinth.com/data/rd9rKuJT/versions/TXsGBFkk/disconnect-packet-fix-fabric-2.3.0.jar sha256:7f00b3ff9ad47e1d9db6adeb7929ac134c2aceab4fd4d2e337269a3de84e421c
 external recipecooldown https://cdn.modrinth.com/data/7LEWYKTV/versions/v7KRefAi/RecipeCooldown-1.1.0%2B26.2.jar sha256:6ac033f7bb1a6e9cb5b948a791ae752d31796c9e68e2f98296fc219e0fbafb56
