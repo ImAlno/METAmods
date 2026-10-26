@@ -4,7 +4,7 @@ import eu.pb4.sgui.api.containerwrappers.SlotBasedWrapperMenu;
 import eu.pb4.sgui.api.elements.GuiElement;
 import eu.pb4.sgui.api.elements.GuiElementBuilder;
 import eu.pb4.sgui.api.gui.SimpleGui;
-import se.metacraft.skins.Kind;
+import se.metacraft.skins.Fit;
 import se.metacraft.skins.OwnershipChange;
 import se.metacraft.skins.PerkLines;
 import se.metacraft.skins.SkinFolder;
@@ -101,7 +101,7 @@ public final class ClaimMenu {
 				Feedback.cancelled(player);
 			}));
 		}
-		gui.setSlot(SKIN, icon(skin, skin.kind().get(), owned));
+		gui.setSlot(SKIN, icon(skin, skin.fit().orElseThrow(), owned));
 		gui.open();
 		Feedback.pageTurn(player);
 	}
@@ -118,12 +118,12 @@ public final class ClaimMenu {
 		SkinToken.resend(player);   // their other tokens for it now say it's owned
 	}
 
-	/** The skin in the centre: its Look on its Kind's item, the Kind, and what claiming means. */
-	private static GuiElement icon(SkinSummary skin, Kind kind, boolean owned) {
-		GuiElementBuilder icon = GuiElementBuilder.from(new ItemStack(kind.icon()))
+	/** The skin in the centre: its Look on an item it fits, what it fits, and what claiming means. */
+	private static GuiElement icon(SkinSummary skin, Fit fit, boolean owned) {
+		GuiElementBuilder icon = GuiElementBuilder.from(new ItemStack(fit.icon()))
 				.model(Identifier.fromNamespaceAndPath(SkinFolder.NAMESPACE, skin.id()))
 				.setName(Component.literal(skin.displayName()).withStyle(ChatFormatting.YELLOW))
-				.addLoreLine(Component.literal("Fits any " + kind.id()).withStyle(ChatFormatting.GRAY))
+				.addLoreLine(Component.literal("Fits " + fit.what()).withStyle(ChatFormatting.GRAY))
 				.hideDefaultTooltip();
 		PerkLines.of(skin.perks()).forEach(icon::addLoreLine);
 		skin.description().ifPresent(d -> icon.addLoreLine(Component.literal(d).withStyle(ChatFormatting.GRAY)));

@@ -378,7 +378,7 @@ public final class Skins {
 
 	/**
 	 * What {@code viewer} is sent of a token: Polymer's client copy ({@code client}) named
-	 * "Skin Token: <Skin>" (gold, no glint), with the lore "Fits any <Kind>", the Perk lines, the description, a
+	 * "Skin Token: <Skin>" (gold, no glint), with the lore "Fits any <Kind>" (or "Fits leather and turtle helmets"), the Perk lines, the description, a
 	 * blank line and "Right-click to claim", or, for a viewer who owns the skin, "✔ You already own
 	 * this skin — trade it away". A token for an unknown or Dormant skin reads "Unknown skin token: <id>".
 	 */
@@ -394,7 +394,7 @@ public final class Skins {
 		SkinFolder.Loaded loaded = skin.loaded().get();
 		boolean owned = viewer != null && ownership.read(viewer) instanceof OwnershipStore.Readable(var record) && record.skins().containsKey(id);
 		List<Component> lines = new ArrayList<>();
-		lines.add(plain("Fits any " + loaded.kind().id(), ChatFormatting.GRAY));
+		lines.add(plain("Fits " + loaded.fit().what(), ChatFormatting.GRAY));
 		lines.addAll(PerkLines.of(inEffect(loaded.perks())));
 		loaded.description().ifPresent(d -> lines.add(plain(d, ChatFormatting.GRAY)));
 		lines.add(Component.empty());

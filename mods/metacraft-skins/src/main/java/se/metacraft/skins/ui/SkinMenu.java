@@ -4,7 +4,7 @@ import eu.pb4.sgui.api.elements.GuiElementBuilder;
 import eu.pb4.sgui.api.gui.SimpleGui;
 import se.metacraft.skins.ApplyResult;
 import se.metacraft.skins.Candidate;
-import se.metacraft.skins.Kind;
+import se.metacraft.skins.Fit;
 import se.metacraft.skins.OwnedSkin;
 import se.metacraft.skins.OwnershipChange;
 import se.metacraft.skins.PerkLines;
@@ -59,7 +59,7 @@ public final class SkinMenu {
 	}
 
 	/** One owned skin as the menu lists it. */
-	private record Listed(OwnedSkin owned, SkinSummary skin, Kind kind) {
+	private record Listed(OwnedSkin owned, SkinSummary skin, Fit fit) {
 		boolean applied() {
 			return owned.state() == OwnedSkin.State.APPLIED;
 		}
@@ -69,9 +69,9 @@ public final class SkinMenu {
 		List<Listed> listed = new ArrayList<>();
 		for (OwnedSkin skin : owned.skins()) {
 			if (skin.state() == OwnedSkin.State.DORMANT) continue;
-			skins.skin(skin.id()).filter(s -> !s.dormant() && s.kind().isPresent()).ifPresent(s -> listed.add(new Listed(skin, s, s.kind().get())));
+			skins.skin(skin.id()).filter(s -> !s.dormant() && s.kind().isPresent()).ifPresent(s -> listed.add(new Listed(skin, s, s.fit().orElseThrow())));
 		}
-		listed.sort(Comparator.comparing((Listed l) -> l.kind().ordinal()).thenComparing(l -> l.skin().displayName()).thenComparing(l -> l.skin().id()));
+		listed.sort(Comparator.comparing((Listed l) -> l.fit().kind().ordinal()).thenComparing(l -> l.skin().displayName()).thenComparing(l -> l.skin().id()));
 		return listed;
 	}
 
@@ -142,8 +142,8 @@ public final class SkinMenu {
 		if (page > 0) gui.setSlot(PREVIOUS_ITEMS, arrow("Previous page", () -> applyScreen(player, skins, skinId, fromPage, page - 1)));
 		if (page < pages - 1) gui.setSlot(NEXT_ITEMS, arrow("Next page", () -> applyScreen(player, skins, skinId, fromPage, page + 1)));
 		if (candidates.isEmpty()) {
-			gui.setSlot(MIDDLE, new GuiElementBuilder(Items.BARRIER).setName(Component.literal("You aren't carrying " + skin.kind().aOne()).withStyle(ChatFormatting.RED))
-					.addLoreLine(Component.literal(name + " fits any " + skin.kind().id() + ".").withStyle(ChatFormatting.GRAY))
+			gui.setSlot(MIDDLE, new GuiElementBuilder(Items.BARRIER).setName(Component.literal("You aren't carrying " + skin.fit().aOne()).withStyle(ChatFormatting.RED))
+					.addLoreLine(Component.literal(name + " fits " + skin.fit().what() + ".").withStyle(ChatFormatting.GRAY))
 					.addLoreLine(Component.literal("Pick one up and run /skins again.").withStyle(ChatFormatting.GRAY)).build());
 		}
 		List<Candidate> shown = candidates.subList(page * ITEMS_PER_PAGE, Math.min(candidates.size(), (page + 1) * ITEMS_PER_PAGE));
@@ -193,12 +193,12 @@ public final class SkinMenu {
 		yourSkins(player, skins, fromPage);
 	}
 
-	/** A skin shown with its Look: the Kind's vanilla item wearing the skin's item model, its own tooltip hidden. */
+	/** A skin shown with its Look: a vanilla item it fits ({@link Fit#icon()}) wearing the skin's item model, its own tooltip hidden. */
 	private static GuiElementBuilder icon(Listed skin) {
-		GuiElementBuilder icon = GuiElementBuilder.from(new ItemStack(skin.kind().icon()))
+		GuiElementBuilder icon = GuiElementBuilder.from(new ItemStack(skin.fit().icon()))
 				.model(Identifier.fromNamespaceAndPath(SkinFolder.NAMESPACE, skin.skin().id()))
 				.setName(Component.literal(skin.skin().displayName()).withStyle(ChatFormatting.YELLOW))
-				.addLoreLine(Component.literal("Fits any " + skin.kind().id()).withStyle(ChatFormatting.GRAY))
+				.addLoreLine(Component.literal("Fits " + skin.fit().what()).withStyle(ChatFormatting.GRAY))
 				.hideDefaultTooltip();
 		PerkLines.of(skin.skin().perks()).forEach(icon::addLoreLine);
 		skin.skin().description().ifPresent(d -> icon.addLoreLine(Component.literal(d).withStyle(ChatFormatting.GRAY)));

@@ -129,6 +129,12 @@ the server next touches it, and the skin goes Unapplied for its Owner; items tha
 Widening the list again before an item is touched leaves it as it was. (Changing `kind` is different:
 see [Dormant skins and permanent ids](#dormant-skins-and-permanent-ids).)
 
+Players read a limited skin's Materials as vanilla's item names do, in the table's order whatever
+order you list them in: tokens and menus say "Fits diamond and netherite swords" or "Fits wooden, stone
+and iron pickaxes" (an unlimited skin says "Fits any sword"). Menus show the skin on its Kind's diamond
+item if it fits diamond, and otherwise on its item of the skin's last Material in the table's order: an
+iron-only sword skin shows on an iron sword, a leather-only hat on a leather helmet.
+
 **How a Look shows:**
 
 - **Helmets** show their model on the wearer's head, and the helmet keeps its armour and abilities.

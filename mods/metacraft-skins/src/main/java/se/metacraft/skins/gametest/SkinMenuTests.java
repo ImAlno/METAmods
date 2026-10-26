@@ -31,7 +31,7 @@ import static se.metacraft.skins.gametest.SkinFixtures.assertThat;
  */
 public final class SkinMenuTests {
 	static final int FIRST_ITEM = 9;
-	private static final int REMOVE = 8, MIDDLE = 22, PREVIOUS_PAGE = 45, BOOK = 49, NEXT_PAGE = 53;
+	private static final int PREVIEW = 4, REMOVE = 8, MIDDLE = 22, PREVIOUS_PAGE = 45, BOOK = 49, NEXT_PAGE = 53;
 	/** "Apply: <skin>"'s page arrows, either side of the preview. */
 	private static final int APPLY_PREVIOUS_PAGE = 3, APPLY_NEXT_PAGE = 5;
 
@@ -191,6 +191,51 @@ public final class SkinMenuTests {
 		}
 		helper.succeed();
 	}
+
+	/**
+	 * A limited skin says which Materials it fits, in vanilla order, and is shown on an item it
+	 * fits: the diamond one if it fits diamond, else its last Material's. With nothing that fits,
+	 * the apply screen names those Materials too. Unlimited skins read and show as before.
+	 */
+	@GameTest
+	public void aLimitedSkinSaysWhatItFitsAndShowsOnAnItemItFits(GameTestHelper helper) {
+		SkinFixtures fx = SkinFixtures.create().limited("blades", "sword", "[\"netherite\", \"diamond\"]").limited("irons", "sword", "[\"iron\"]")
+				.skin("plain", "sword").limited("cap", "helmet", "[\"leather\"]").limited("boots", "boots", "[\"leather\"]");
+		fx.reload();
+		SkinFixtures.Listening player = SkinFixtures.join(helper);
+		try {
+			player.getInventory().clearContent();
+			for (String skin : List.of("blades", "irons", "plain", "cap", "boots")) fx.skins.grant(player.nameAndId(), skin);
+			SkinMenu.open(player, fx.skins);
+			// Sorted by Kind, then name: the swords, the helmet, the boots.
+			List<Shown> shown = List.of(
+					new Shown("blades skin", Items.DIAMOND_SWORD, "diamond and netherite swords", "a diamond or netherite sword"),
+					new Shown("irons skin", Items.IRON_SWORD, "iron swords", "an iron sword"),
+					new Shown("plain skin", Items.DIAMOND_SWORD, "any sword", "a sword"),
+					new Shown("cap skin", Items.LEATHER_HELMET, "leather helmets", "a leather helmet"),
+					new Shown("boots skin", Items.LEATHER_BOOTS, "leather boots", "leather boots"));
+			for (int i = 0; i < shown.size(); i++) {
+				Shown expected = shown.get(i);
+				assertThat(name(player, i).equals(expected.name()), "slot " + i + " is " + name(player, i));
+				assertThat(slot(player, i).is(expected.icon()) && !slot(player, i).has(DataComponents.DYED_COLOR),
+						expected.name() + " is shown on " + slot(player, i) + " " + slot(player, i).get(DataComponents.DYED_COLOR));
+				assertThat(lore(player, i).getFirst().equals("Fits " + expected.fits()), expected.name() + "'s tooltip: " + lore(player, i));
+
+				click(player, i);
+				assertThat(title(player).equals("Apply: " + expected.name()), "opened " + title(player));
+				assertThat(slot(player, PREVIEW).is(expected.icon()), expected.name() + "'s preview is " + slot(player, PREVIEW));
+				assertThat(slot(player, MIDDLE).is(Items.BARRIER) && name(player, MIDDLE).equals("You aren't carrying " + expected.carrying()),
+						"with nothing that fits " + expected.name() + ": " + name(player, MIDDLE));
+				assertThat(lore(player, MIDDLE).getFirst().equals(expected.name() + " fits " + expected.fits() + "."), "the barrier's lore: " + lore(player, MIDDLE));
+				click(player, 0);   // Back
+			}
+		} finally {
+			helper.getLevel().getServer().getPlayerList().remove(player);
+		}
+		helper.succeed();
+	}
+
+	private record Shown(String name, net.minecraft.world.item.Item icon, String fits, String carrying) {}
 
 	@GameTest
 	public void moreThanAChestOfSkinsIsPaged(GameTestHelper helper) {

@@ -74,6 +74,24 @@ public final class ClaimMenuTests {
 		helper.succeed();
 	}
 
+	/** A limited skin in the centre is shown on an item it fits, and names its Materials in vanilla order. */
+	@GameTest
+	public void aLimitedSkinIsShownOnAnItemItFits(GameTestHelper helper) {
+		SkinFixtures fx = SkinFixtures.create().limited("picks", "pickaxe", "[\"iron\", \"wood\", \"stone\"]");
+		fx.reload();
+		SkinFixtures.Listening player = SkinFixtures.join(helper);
+		try {
+			player.getInventory().clearContent();
+			player.getInventory().setItem(0, SkinToken.of("picks", 1));
+			ClaimMenu.open(player, fx.skins, player.getInventory().getItem(0));
+			assertThat(slot(player, SKIN).is(Items.IRON_PICKAXE), "the skin is shown on " + slot(player, SKIN));
+			assertThat(lore(player, SKIN).getFirst().equals("Fits wooden, stone and iron pickaxes"), "the skin's tooltip: " + lore(player, SKIN));
+		} finally {
+			helper.getLevel().getServer().getPlayerList().remove(player);
+		}
+		helper.succeed();
+	}
+
 	@GameTest
 	public void anOwnedSkinsTokenIsKept(GameTestHelper helper) {
 		SkinFixtures fx = SkinFixtures.create().skin("crown_test", "helmet", "Crown", null);

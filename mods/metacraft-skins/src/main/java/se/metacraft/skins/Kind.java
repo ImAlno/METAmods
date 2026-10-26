@@ -48,10 +48,9 @@ public enum Kind {
 		return name().toLowerCase(Locale.ROOT);
 	}
 
-	/** "a sword", "an axe", "boots": for "You aren't carrying …". */
-	public String aOne() {
-		if (this == LEGGINGS || this == BOOTS) return id();
-		return ("aeiou".indexOf(id().charAt(0)) >= 0 ? "an " : "a ") + id();
+	/** "swords", "axes", "leggings": for "Fits diamond and netherite swords". */
+	public String plural() {
+		return this == LEGGINGS || this == BOOTS ? id() : id() + "s";
 	}
 
 	public static Optional<Kind> byId(String id) {
@@ -68,7 +67,7 @@ public enum Kind {
 		return this == HELMET;
 	}
 
-	/** The vanilla item a skin of this Kind is shown on in menus (with the skin's Look). */
+	/** The Kind's diamond item (the mace and elytra: their one item); a skin is shown on {@link Fit#icon()}. */
 	public Item icon() {
 		return icon;
 	}

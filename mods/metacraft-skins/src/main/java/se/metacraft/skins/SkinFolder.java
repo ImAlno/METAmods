@@ -58,7 +58,11 @@ public final class SkinFolder {
 	 * path. {@code materials} is the Materials it's limited to, in vanilla order; empty if it fits every one.
 	 */
 	record Loaded(String id, String name, Kind kind, Optional<List<Material>> materials, Optional<String> description, List<Perk> perks,
-				Map<String, byte[]> files) {}
+				Map<String, byte[]> files) {
+		Fit fit() {
+			return new Fit(kind, materials);
+		}
+	}
 
 	static final class Rejected extends Exception {
 		final Path file;

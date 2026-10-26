@@ -115,6 +115,26 @@ public final class TokenTests {
 		helper.succeed();
 	}
 
+	/**
+	 * A limited skin's token names its Materials as vanilla's item names do, in vanilla order
+	 * whatever order the admin listed them in, with the Kind in the plural.
+	 */
+	@GameTest
+	public void aLimitedSkinsTokenSaysWhichMaterialsItFits(GameTestHelper helper) {
+		SkinFixtures fx = SkinFixtures.create().limited("cap", "helmet", "[\"leather\"]").limited("shell_cap", "helmet", "[\"turtle\", \"leather\"]")
+				.limited("picks", "pickaxe", "[\"iron\", \"wood\", \"stone\"]").limited("blades", "sword", "[\"netherite\", \"diamond\"]")
+				.limited("greaves", "leggings", "[\"gold\"]").skin("plain", "sword");
+		fx.reload();
+		ServerPlayer viewer = helper.makeMockServerPlayerInLevel();
+		for (var expected : List.of(List.of("cap", "Fits leather helmets"), List.of("shell_cap", "Fits leather and turtle helmets"),
+				List.of("picks", "Fits wooden, stone and iron pickaxes"), List.of("blades", "Fits diamond and netherite swords"),
+				List.of("greaves", "Fits golden leggings"), List.of("plain", "Fits any sword"))) {
+			List<String> lore = text(lore(view(helper, fx, SkinToken.of(expected.get(0), 1), viewer)));
+			assertThat(!lore.isEmpty() && lore.getFirst().equals(expected.get(1)), expected.get(0) + "'s token reads " + lore);
+		}
+		helper.succeed();
+	}
+
 	@GameTest
 	public void claimingMakesThePlayerTheOwnerAndUsesUpOneToken(GameTestHelper helper) {
 		SkinFixtures fx = SkinFixtures.create().skin("crown_test", "helmet", "Crown", null);

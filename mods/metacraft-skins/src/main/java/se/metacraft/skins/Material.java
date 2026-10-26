@@ -60,6 +60,15 @@ public enum Material {
 		return name().toLowerCase(Locale.ROOT);
 	}
 
+	/** As players read it, lower case, as in vanilla's item names: {@code wooden}, {@code golden}, {@code leather}. */
+	public String adjective() {
+		return switch (this) {
+			case WOOD -> "wooden";
+			case GOLD -> "golden";
+			default -> id();
+		};
+	}
+
 	public static Optional<Material> byId(String id) {
 		return Arrays.stream(values()).filter(m -> m.id().equals(id)).findFirst();
 	}
@@ -72,6 +81,11 @@ public enum Material {
 			case CHESTPLATE, LEGGINGS, BOOTS -> ARMOUR;
 			case MACE, ELYTRA -> List.of();
 		};
+	}
+
+	/** The Kind's vanilla item of this Material: the iron sword, the leather helmet. Only for a Material {@linkplain #of(Kind) the Kind comes in}. */
+	static Item item(Kind kind, Material material) {
+		return ITEMS.get(kind).get(of(kind).indexOf(material));
 	}
 
 	/** The item's Material, if it's one of the table's vanilla items; empty for any other (unrecognised). */
