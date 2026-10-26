@@ -716,7 +716,7 @@ inflated 1.0 where the leggings are 0.5, so the shader draws it on the leggings'
 [Danse](https://github.com/tomalbrc/danse) plays gestures (`/gesture wave`, …) by hiding the real
 player and animating a stand-in built of item displays. We run **our fork**
 ([Froosty11/danse](https://github.com/Froosty11/danse), branch `metacraft`, AGPL-3.0; the build
-fetches its jar from the fork's release [v2.6.0-metacraft.2](https://github.com/Froosty11/danse/releases/tag/v2.6.0-metacraft.2), see "The danse fork" below), which adds *body layers*: any mod can put an ordinary textured
+fetches its jar from the fork's release [v2.6.0-metacraft.9](https://github.com/Froosty11/danse/releases/tag/v2.6.0-metacraft.9), see "The danse fork" below), which adds *body layers*: any mod can put an ordinary textured
 item model on each part of the stand-in, just inside Danse's armour.
 
 Upstream Danse draws skin and armour as one tinted square per skin texel. Ovvar's layer textures
@@ -759,22 +759,23 @@ for the "before" frame).
 Danse is by tomalbrc, Drex and ExtraJuiceMan ([tomalbrc/danse](https://github.com/tomalbrc/danse)),
 under the GNU Affero General Public License v3.0 (`LICENSE_danse` inside the jar; upstream's
 `fabric.mod.json` says LGPL-3.0-and-later while its LICENSE file is AGPL-3.0, and we follow the AGPL).
-Ovvar compiles against our fork's release jar, `danse-2.6.0-metacraft.2+26.3.jar` from
-[Froosty11/danse v2.6.0-metacraft.2](https://github.com/Froosty11/danse/releases/tag/v2.6.0-metacraft.2),
+Ovvar compiles against our fork's release jar, `danse-2.6.0-metacraft.9+26.3.jar` from
+[Froosty11/danse v2.6.0-metacraft.9](https://github.com/Froosty11/danse/releases/tag/v2.6.0-metacraft.9),
 which the root `build.gradle` fetches as `Froosty11:danse` (an ivy repository on the fork's GitHub
 releases, version `danse_version` in `gradle.properties`). It is `compileOnly` and a dev/test
 `runtimeOnly`: nothing in METAmods includes or relicenses it, and ovvar only calls its API.
 
-The jar is built from branch `metacraft`, commit `4c4a0868738acd88d988e002ce333abeec80845a`:
+The jar is built from branch `metacraft`, commit `529a1b775912683494bae6cf2070e7c399f79922`:
 
-    git clone https://github.com/Froosty11/danse && cd danse && git checkout 4c4a0868738acd88d988e002ce333abeec80845a
+    git clone https://github.com/Froosty11/danse && cd danse && git checkout 529a1b775912683494bae6cf2070e7c399f79922
     JAVA_HOME=<a JDK 25> ./gradlew build
 
 Changes from upstream v2.6.0+26.3: mixins listed as common, a body-layer API
 (`de.tomalbrc.danse.api`, with cropped-texture shells), `/danse source` (open to every player, also
 `/gesture source`), which tells players where this source is, and gestures that end with a real
 teleport (upstream's position packet carried the entity id as its teleport id, which 26.3 could
-answer with a kick). A server that runs ovvar with gestures needs that jar beside it.
+answer with a kick), and a `danse:player_model` that `/kill` and a creative hit remove (upstream's
+answered a creative hit with `kill()`, which 26.3 sends back as a hit it ignores, so nothing could). A server that runs ovvar with gestures needs that jar beside it.
 
 ## The guidebook
 

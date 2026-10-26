@@ -64,6 +64,33 @@ public final class DanseForkTests {
 		});
 	}
 
+	/**
+	 * A {@code danse:player_model} (a statue that plays a gesture) shrugs off ordinary damage so it
+	 * keeps dancing, but {@code /kill} and a creative player's hit must remove it. Upstream answered
+	 * a creative hit with {@code kill()}, which in 26.3 is itself a {@code genericKill} hit, so it
+	 * came straight back, was ignored, and nothing could ever remove the model.
+	 */
+	@GameTest(maxTicks = 40)
+	public void aPlayerModelCanBeKilled(GameTestHelper helper) {
+		if (!net.fabricmc.loader.api.FabricLoader.getInstance().isModLoaded("danse")) { helper.succeed(); return; }
+		var level = helper.getLevel();
+		// By id: the class implements bil's AnimatedEntity, a jar nested in Danse that we do not compile against
+		var playerModel = net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getValue(net.minecraft.resources.Identifier.parse("danse:player_model"));
+		var survivor = helper.spawn(playerModel, 1, 2, 1);
+		survivor.hurtServer(level, level.damageSources().generic(), 5);
+		if (survivor.isRemoved()) { helper.fail("ordinary damage removed the player model"); return; }
+
+		survivor.kill(level);
+		if (!survivor.isRemoved()) { helper.fail("/kill did not remove the player model"); return; }
+
+		var punched = helper.spawn(playerModel, 2, 2, 1);
+		ServerPlayer creative = helper.makeMockServerPlayerInLevel();
+		creative.setGameMode(net.minecraft.world.level.GameType.CREATIVE);
+		punched.hurtServer(level, level.damageSources().playerAttack(creative), 1);
+		if (!punched.isRemoved()) { helper.fail("a creative player's hit did not remove the player model"); return; }
+		helper.succeed();
+	}
+
 	private static Field awaitingField() throws NoSuchFieldException {
 		Field f = ServerGamePacketListenerImpl.class.getDeclaredField("awaitingPositionFromClient");
 		f.setAccessible(true);
