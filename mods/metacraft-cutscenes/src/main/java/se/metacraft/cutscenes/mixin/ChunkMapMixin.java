@@ -14,7 +14,7 @@ import org.spongepowered.asm.mixin.injection.At;
 import se.metacraft.cutscenes.util.helper.CutsceneHelper;
 import se.metacraft.cutscenes.util.helper.HiddenEntityHelper;
 
-@Mixin(ChunkMap.class)
+@Mixin(value = ChunkMap.class, priority = 1100)
 public class ChunkMapMixin {
 
 	@WrapOperation(
