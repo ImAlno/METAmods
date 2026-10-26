@@ -86,7 +86,7 @@ public final class SkinMenuTests {
 			click(player, REMOVE);
 			assertThat(title(player).equals("Your Skins"), "removing went to " + title(player));
 			assertThat(fx.skins.ownedSkins(player.getUUID()).skins().stream().allMatch(s -> s.state() != OwnedSkin.State.APPLIED), "the skin is still applied");
-			assertThat(player.heard.contains("Candy Sword removed. Its item reverts wherever it is."), "the player was told " + player.heard);
+			assertThat(player.heard.contains("Candy Sword removed. The item it was on is plain again."), "the player was told " + player.heard);
 			assertThat(!player.getInventory().getItem(0).has(SkinMarker.TYPE), "Remove didn't tidy the player's sword");
 		} finally {
 			helper.getLevel().getServer().getPlayerList().remove(player);

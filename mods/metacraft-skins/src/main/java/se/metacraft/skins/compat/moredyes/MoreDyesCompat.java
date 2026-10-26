@@ -15,12 +15,13 @@ import java.util.Optional;
  * ({@code ModDyeRecipe}) combines them on leather: its dyes mix freely with vanilla's
  * ({@link DyeStacks#mix}), and an animated colour stands alone in the grid, overwrites the old
  * colour and marks the helmet with {@link AnimatedArmor#ANIMATED_DYE}. The only class that names
- * moredyes' types; reached only when {@link DyeSkinnedItemRecipe} finds moredyes installed.
+ * moredyes' types; reached only when {@link DyeSkinnedItemRecipe#MOREDYES_COLOURS} says it is
+ * installed.
  */
-public final class MoreDyesDyes implements DyeSkinnedItemRecipe.Dyes {
-	public static final DyeSkinnedItemRecipe.Dyes INSTANCE = new MoreDyesDyes();
+public final class MoreDyesCompat implements DyeSkinnedItemRecipe.Dyes {
+	public static final DyeSkinnedItemRecipe.Dyes INSTANCE = new MoreDyesCompat();
 
-	private MoreDyesDyes() {}
+	private MoreDyesCompat() {}
 
 	@Override
 	public boolean isDye(ItemStack stack) {
@@ -29,7 +30,7 @@ public final class MoreDyesDyes implements DyeSkinnedItemRecipe.Dyes {
 
 	/** An animated colour only alone. */
 	@Override
-	public boolean combine(List<ItemStack> dyes) {
+	public boolean combines(List<ItemStack> dyes) {
 		return dyes.size() == 1 || dyes.stream().noneMatch(dye -> DyeStacks.animatedColour(dye).isPresent());
 	}
 

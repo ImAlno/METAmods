@@ -404,8 +404,9 @@ vanilla level to fall back on when no permissions mod is installed. Skin ids tab
   `cowboy_hat (helmet: leather, dyeable)`, or `cowboy_hat (helmet, dyeable)` with no Materials.
 - **`grant`** makes a player own a skin without a token. Refused if they already own it, or the skin is
   unknown or Dormant. An online player gets the claim message.
-- **`revoke`** takes a skin away, Dormant ones too. The item carrying it reverts wherever it is. An online
-  player is told "<Skin> was removed from your skins by an admin."
+- **`revoke`** takes a skin away, Dormant ones too. The item carrying it is plain for good, as in
+  [How items behave](#how-items-behave): an online player's own items are tidied at once, and the item
+  anywhere else is drawn plain. An online player is told "<Skin> was removed from your skins by an admin."
 - `info`, `grant` and `revoke` take offline players by name, looked up as `/whitelist` does: the server's
   user cache first, then (in online mode) Mojang.
 - There is no force-remove: only the Owner takes a skin off an item. Use `revoke` to take the skin away.

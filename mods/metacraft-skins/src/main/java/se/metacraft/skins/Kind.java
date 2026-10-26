@@ -51,7 +51,12 @@ public enum Kind {
 
 	/** "swords", "axes", "leggings": for "Fits diamond and netherite swords". */
 	public String plural() {
-		return this == LEGGINGS || this == BOOTS ? id() : id() + "s";
+		return isPair() ? id() : id() + "s";
+	}
+
+	/** Leggings and boots: named as a pair, already plural, so with no "a" and no added "s" ("leather boots"). */
+	public boolean isPair() {
+		return this == LEGGINGS || this == BOOTS;
 	}
 
 	public static Optional<Kind> byId(String id) {

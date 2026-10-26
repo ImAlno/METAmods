@@ -6,8 +6,7 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
-import com.mojang.datafixers.util.Pair;
-import eu.pb4.polymer.core.api.entity.PolymerEntityUtils;
+import se.metacraft.skins.DrawingCheck;
 import se.metacraft.skins.Material;
 import se.metacraft.skins.MetacraftSkins;
 import se.metacraft.skins.OwnedSkin;
@@ -29,18 +28,13 @@ import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.commands.arguments.GameProfileArgument;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
 import net.minecraft.resources.Identifier;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.permissions.PermissionLevel;
 import net.minecraft.server.players.NameAndId;
-import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.item.ItemStack;
 
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.function.Predicate;
@@ -223,7 +217,8 @@ public final class SkinsCommands {
 			SkinToken.resend(online);
 		}
 		ctx.getSource().sendSuccess(() -> Component.literal("Revoked " + name + " (" + id + ") from " + player.name()
-				+ (online == null ? " (offline)" : "") + ". Any item carrying it reverts."), true);
+				+ (online == null ? " (offline). The item it was on is drawn plain wherever it is."
+						: ". Their own items were tidied, and the item anywhere else is drawn plain.")), true);
 		return 1;
 	}
 
@@ -233,32 +228,11 @@ public final class SkinsCommands {
 		return 0;
 	}
 
-	/**
-	 * After a reload that took a Look away: every online player is sent their own items again (their
-	 * inventory, and any menu they have open), and their equipment goes again to everyone who sees
-	 * them, tagged with the wearer so the drawing check draws it as being with them. Clients then drop
-	 * the Look that's gone.
-	 */
-	private static void redrawEveryone(MinecraftServer server) {
-		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
-			player.containerMenu.sendAllDataToRemote();
-			if (player.containerMenu != player.inventoryMenu) player.inventoryMenu.sendAllDataToRemote();
-			List<Pair<EquipmentSlot, ItemStack>> worn = new ArrayList<>();
-			for (EquipmentSlot slot : EquipmentSlot.VALUES) {
-				ItemStack item = player.getItemBySlot(slot);
-				if (!item.isEmpty()) worn.add(Pair.of(slot, item.copy()));
-			}
-			if (worn.isEmpty()) continue;
-			player.level().getChunkSource().sendToTrackingPlayers(player,
-					PolymerEntityUtils.setEntityContext(new ClientboundSetEquipmentPacket(player.getId(), worn), player));
-		}
-	}
-
 	private static int reload(CommandContext<CommandSourceStack> ctx, Skins skins) {
 		CommandSourceStack source = ctx.getSource();
 		ReloadReport report = skins.reload();
 		int pushed = report.changed() ? PackDelivery.pushToAll(source.getServer(), skins) : 0;
-		if (report.lookTakenAway()) redrawEveryone(source.getServer());
+		if (report.lookTakenAway()) DrawingCheck.redrawEveryone(source.getServer());
 		int loaded = report.loaded().size();
 		String pack = report.changed()
 				? "The pack changed (" + report.sha1().substring(0, 8) + ") and was sent to " + pushed + " player" + (pushed == 1 ? "" : "s") + " online."

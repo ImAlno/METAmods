@@ -419,9 +419,7 @@ public final class Skins {
 		}
 		SkinFolder.Loaded loaded = skin.loaded().get();
 		boolean owned = viewer != null && ownership.read(viewer) instanceof OwnershipStore.Readable(var record) && record.skins().containsKey(id);
-		List<Component> lines = new ArrayList<>();
-		lines.add(plain("Fits " + loaded.fit().what(), ChatFormatting.GRAY));
-		if (loaded.dyeable()) lines.add(plain(SkinSummary.DYE_HINT, ChatFormatting.GRAY));
+		List<Component> lines = new ArrayList<>(loaded.fit().lore(loaded.dyeable()));
 		lines.addAll(PerkLines.of(inEffect(loaded.perks())));
 		loaded.description().ifPresent(d -> lines.add(plain(d, ChatFormatting.GRAY)));
 		lines.add(Component.empty());
@@ -473,11 +471,13 @@ public final class Skins {
 	}
 
 	/**
-	 * Does the skin fit this item? It must be of the skin's Kind and, if the skin is limited to
-	 * Materials, made of one of them; an item of no Material the mod knows (another mod's) fits only
-	 * a skin that isn't limited.
+	 * Does the skin fit this item (a stack, or one held inside a shulker box or bundle)? It must be of
+	 * the skin's Kind and, if the skin is limited to Materials, made of one of them; an item of no
+	 * Material the mod knows (another mod's) fits only a skin that isn't limited. What {@link #apply},
+	 * {@link #candidates}, {@link #liveSkin} and {@link #tidy} check; {@link Kind#fits} is the Kind
+	 * test alone. Safe from any thread.
 	 */
-	private static boolean fits(SkinFolder.Loaded skin, ItemInstance item) {
+	public static boolean fits(SkinFolder.Loaded skin, ItemInstance item) {
 		if (!skin.kind().fits(item)) return false;
 		return skin.materials().map(allowed -> Material.of(item).filter(allowed::contains).isPresent()).orElse(true);
 	}

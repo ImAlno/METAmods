@@ -1,5 +1,7 @@
 package se.metacraft.skins;
 
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.item.Item;
 
 import java.util.List;
@@ -12,6 +14,9 @@ import java.util.Optional;
  * lists them in.
  */
 public record Fit(Kind kind, Optional<List<Material>> materials) {
+	/** The gray line under "Fits …" for a Dyeable Hat. */
+	private static final String DYE_HINT = "Dye the helmet to recolour it";
+
 	public Fit {
 		List<Material> order = Material.of(kind);
 		materials = materials.map(m -> order.stream().filter(m::contains).toList());
@@ -25,8 +30,17 @@ public record Fit(Kind kind, Optional<List<Material>> materials) {
 	/** "a helmet", "a diamond or netherite sword", "an iron sword", "leather boots": for "You aren't carrying …". */
 	public String aOne() {
 		String one = materials.map(m -> adjectives(m, "or") + " ").orElse("") + kind.id();
-		if (kind == Kind.LEGGINGS || kind == Kind.BOOTS) return one;
+		if (kind.isPair()) return one;
 		return ("aeiou".indexOf(one.charAt(0)) >= 0 ? "an " : "a ") + one;
+	}
+
+	/**
+	 * The lore that says what the skin fits, on its token, Claim screen and Skin Menu icons: "Fits …"
+	 * and, for a Dyeable Hat ({@code dyeable}), "Dye the helmet to recolour it", both gray.
+	 */
+	public List<Component> lore(boolean dyeable) {
+		Component fits = gray("Fits " + what());
+		return dyeable ? List.of(fits, gray(DYE_HINT)) : List.of(fits);
 	}
 
 	/**
@@ -36,6 +50,10 @@ public record Fit(Kind kind, Optional<List<Material>> materials) {
 	 */
 	public Item icon() {
 		return materials.filter(m -> !m.contains(Material.DIAMOND)).map(m -> Material.item(kind, m.getLast())).orElse(kind.icon());
+	}
+
+	private static Component gray(String text) {
+		return Component.literal(text).withStyle(s -> s.withItalic(false).withColor(ChatFormatting.GRAY));
 	}
 
 	/** "wooden, stone and iron", in vanilla order. */

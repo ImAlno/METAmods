@@ -13,9 +13,6 @@ import java.util.Optional;
 public record SkinSummary(String id, Optional<String> name, Optional<Kind> kind, Optional<List<Material>> materials, boolean dyeable,
 							Optional<String> description, List<Perk> perks,
 							Optional<String> dormantReason) {
-	/** The gray line under "Fits …" on a Dyeable Hat's token, Claim screen and Skin Menu icons. */
-	public static final String DYE_HINT = "Dye the helmet to recolour it";
-
 	public boolean dormant() {
 		return dormantReason.isPresent();
 	}

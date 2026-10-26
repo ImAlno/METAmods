@@ -11,15 +11,18 @@ import net.minecraft.network.protocol.game.ClientboundSetCursorItemPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
 import net.minecraft.network.protocol.game.ClientboundSetPlayerInventoryPacket;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.item.ItemStack;
 import org.jspecify.annotations.Nullable;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -30,7 +33,9 @@ import java.util.UUID;
  * item is with. That's the player whose inventory, worn armour, offhand, cursor or ender chest the
  * packet's own (top-level) stack is in. Anything else, including an item inside a bundle or shulker
  * box, an item entity, a frame, an armour stand, a chest's slots and an encode with no packet bound
- * (Polymer's slot hashing), is with no one: unknown means plain.
+ * (Polymer's slot hashing), is with no one: unknown means plain. After a reload that took a Look
+ * away, {@link #redrawEveryone} sends every online player's items again, tagged so this check
+ * reads them right.
  */
 public final class DrawingCheck {
 	/** The packet being encoded for a client, for the duration of the encode. */
@@ -41,6 +46,27 @@ public final class DrawingCheck {
 	/** What the viewer of {@code context} is sent of {@code original}: Polymer's client copy, drawn by {@code skins}. Any thread. */
 	public static ItemStack draw(Skins skins, ItemStack original, ItemStack client, @Nullable PacketContext context) {
 		return skins.clientView(original, client, with(original, PolymerCommonUtils.getPlayer(context)));
+	}
+
+	/**
+	 * After a reload that took a Look away: every online player is sent their own items again (their
+	 * inventory, and any menu they have open), and their equipment goes again to everyone who sees
+	 * them, tagged with the wearer so {@link #with} reads it as being with them. Clients then drop
+	 * the Look that's gone. Server thread.
+	 */
+	public static void redrawEveryone(MinecraftServer server) {
+		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+			player.containerMenu.sendAllDataToRemote();
+			if (player.containerMenu != player.inventoryMenu) player.inventoryMenu.sendAllDataToRemote();
+			List<Pair<EquipmentSlot, ItemStack>> worn = new ArrayList<>();
+			for (EquipmentSlot slot : EquipmentSlot.VALUES) {
+				ItemStack item = player.getItemBySlot(slot);
+				if (!item.isEmpty()) worn.add(Pair.of(slot, item.copy()));
+			}
+			if (worn.isEmpty()) continue;
+			player.level().getChunkSource().sendToTrackingPlayers(player,
+					PolymerEntityUtils.setEntityContext(new ClientboundSetEquipmentPacket(player.getId(), worn), player));
+		}
 	}
 
 	/** Who {@code original}, a Skinned Item being encoded for {@code viewer}, is with, if anyone; read from the packet being written. */

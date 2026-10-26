@@ -1,7 +1,7 @@
 package se.metacraft.skins;
 
 import com.mojang.serialization.MapCodec;
-import se.metacraft.skins.compat.moredyes.MoreDyesDyes;
+import se.metacraft.skins.compat.moredyes.MoreDyesCompat;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.core.Registry;
 import net.minecraft.core.component.DataComponents;
@@ -32,9 +32,11 @@ import java.util.List;
  * Who is crafting is unknown here, so anyone can dye a live hat, an Away one included.
  */
 public final class DyeSkinnedItemRecipe extends CustomRecipe {
-	// MoreDyesDyes is only loaded (and moredyes' types only linked) when moredyes is installed.
-	private static final DyeSkinnedItemRecipe INSTANCE = new DyeSkinnedItemRecipe(
-			FabricLoader.getInstance().isModLoaded("moredyes") ? MoreDyesDyes.INSTANCE : Dyes.VANILLA);
+	/** Do moredyes' colours dye too? Only with moredyes installed; otherwise only vanilla's dyes do. */
+	public static final boolean MOREDYES_COLOURS = FabricLoader.getInstance().isModLoaded("moredyes");
+
+	// MoreDyesCompat is only loaded (and moredyes' types only linked) when moredyes is installed.
+	private static final DyeSkinnedItemRecipe INSTANCE = new DyeSkinnedItemRecipe(MOREDYES_COLOURS ? MoreDyesCompat.INSTANCE : Dyes.VANILLA);
 	public static final RecipeSerializer<DyeSkinnedItemRecipe> SERIALIZER = new RecipeSerializer<>(MapCodec.unit(INSTANCE), StreamCodec.unit(INSTANCE));
 
 	/**
@@ -59,7 +61,7 @@ public final class DyeSkinnedItemRecipe extends CustomRecipe {
 		boolean isDye(ItemStack stack);
 
 		/** Do these dyes (one or more) go together in one grid? */
-		default boolean combine(List<ItemStack> dyes) {
+		default boolean combines(List<ItemStack> dyes) {
 			return true;
 		}
 
@@ -111,7 +113,7 @@ public final class DyeSkinnedItemRecipe extends CustomRecipe {
 				return null;
 			}
 		}
-		return helmet != null && !found.isEmpty() && dyes.combine(found) ? new Grid(helmet, found) : null;
+		return helmet != null && !found.isEmpty() && dyes.combines(found) ? new Grid(helmet, found) : null;
 	}
 
 	/** A helmet that isn't leather, carrying a live Dyeable Hat. */

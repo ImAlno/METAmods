@@ -38,7 +38,7 @@ public final class Feedback {
 	}
 
 	public static void removed(ServerPlayer player, String skinName) {
-		tell(player, Component.literal(skinName + " removed. Its item reverts wherever it is.").withStyle(ChatFormatting.YELLOW));
+		tell(player, Component.literal(skinName + " removed. The item it was on is plain again.").withStyle(ChatFormatting.YELLOW));
 	}
 
 	public static void cancelled(ServerPlayer player) {

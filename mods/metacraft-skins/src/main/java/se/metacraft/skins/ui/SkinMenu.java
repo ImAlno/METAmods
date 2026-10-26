@@ -206,9 +206,8 @@ public final class SkinMenu {
 		GuiElementBuilder icon = GuiElementBuilder.from(new ItemStack(skin.fit().icon()))
 				.model(Identifier.fromNamespaceAndPath(SkinFolder.NAMESPACE, skin.skin().id()))
 				.setName(Component.literal(skin.skin().displayName()).withStyle(ChatFormatting.YELLOW))
-				.addLoreLine(Component.literal("Fits " + skin.fit().what()).withStyle(ChatFormatting.GRAY))
 				.hideDefaultTooltip();
-		if (skin.skin().dyeable()) icon.addLoreLine(Component.literal(SkinSummary.DYE_HINT).withStyle(ChatFormatting.GRAY));
+		skin.fit().lore(skin.skin().dyeable()).forEach(icon::addLoreLine);
 		PerkLines.of(skin.skin().perks()).forEach(icon::addLoreLine);
 		skin.skin().description().ifPresent(d -> icon.addLoreLine(Component.literal(d).withStyle(ChatFormatting.GRAY)));
 		icon.addLoreLine(skin.applied() ? Component.literal("✔ Applied to an item").withStyle(ChatFormatting.GREEN)

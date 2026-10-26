@@ -17,7 +17,7 @@ import java.util.UUID;
 /**
  * Fires event Perks (hit, kill, block break, hurt) when their event happens, read from the live
  * skin at that moment, for the item's Owner only ({@link Skins} checks). Each Perk rolls its
- * {@code chance} per event, and its {@code cooldown} is the holder's: kept per player (and skin and
+ * {@code chance} per event, and its {@code cooldown} is the player's: kept per player (and skin and
  * Perk), on the server's tick clock, so handing the item over and back never resets it. One per {@link Skins}, so a
  * test's own Skins never sees another's cooldowns.
  */
