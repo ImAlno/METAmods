@@ -189,6 +189,58 @@ public final class SkinDefinitionTests {
 		helper.succeed();
 	}
 
+	/** Only a helmet skin can be a Dyeable Hat, a spear's look included, and {@code dyeable} is true or false. */
+	@GameTest
+	public void dyeableOnANonHelmetOrNotTrueOrFalseIsRejected(GameTestHelper helper) {
+		SkinFixtures fx = withHealthyNeighbour().dyeableHat("dyed_sword")
+				.file("dyed_sword", "skin.json5", "{ name: \"Sword\", kind: \"sword\", look: { model: \"dyed_sword.json\", dyeable: true } }")
+				.dyeableHat("dyed_spear")
+				.file("dyed_spear", "skin.json5", "{ name: \"Spear\", kind: \"spear\", look: { icon: \"dyed_spear.json\", in_hand: \"dyed_spear.json\", dyeable: false } }")
+				.tintedHat("yes_hat", "{ model: \"yes_hat.json\", dyeable: \"yes\" }")
+				.tintedHat("off_hat", "{ model: \"off_hat.json\", dyeable: false }");
+		ReloadReport report = fx.reload();
+		assertRejected(report, "dyed_sword", "skin.json5", "\"dyeable\" is only for helmet skins (Dyeable Hats), not a sword");
+		assertRejected(report, "dyed_spear", "skin.json5", "\"dyeable\" is only for helmet skins (Dyeable Hats), not a spear");
+		assertRejected(report, "yes_hat", "skin.json5", "\"dyeable\" must be true or false");
+		assertThat(report.loaded().contains("off_hat"), "dyeable: false is the same as leaving it out, but: " + report);
+		helper.succeed();
+	}
+
+	/** A Dyeable Hat's model must mark Tint faces in its own elements: ones only in a parent don't count. */
+	@GameTest
+	public void aDyeableHatWithNoTintFacesOfItsOwnIsRejected(GameTestHelper helper) {
+		SkinFixtures fx = withHealthyNeighbour().dyeableHat("untinted").file("untinted", "untinted.json", SkinFixtures.model("felt"))
+				.dyeableHat("inherited").file("inherited", "inherited.json", """
+						{ "parent": "minecraft:block/grass_block", "textures": { "top": "felt", "side": "felt", "overlay": "felt" } }""");
+		ReloadReport report = fx.reload();
+		assertRejected(report, "untinted", "untinted.json", "marks no Tint faces (\"tintindex\") in its own elements, so the skin can't be dyeable");
+		assertRejected(report, "inherited", "inherited.json", "Tint faces in its parent don't count");
+		helper.succeed();
+	}
+
+	/**
+	 * A model that marks Tint faces on a skin that isn't dyeable loads, on any Kind, with one minor
+	 * warning: its faces keep their painted colours. A Dyeable Hat gets no such warning.
+	 */
+	@GameTest
+	public void tintFacesOnASkinThatIsntDyeableAreWarnedAbout(GameTestHelper helper) {
+		SkinFixtures fx = SkinFixtures.create().tintedHat("plain_hat", "{ model: \"plain_hat.json\" }")
+				.tintedHat("off_hat", "{ model: \"off_hat.json\", dyeable: false }")
+				.tintedHat("tinted_sword", "{ model: \"tinted_sword.json\" }")
+				.file("tinted_sword", "skin.json5", "{ name: \"Sword\", kind: \"sword\", look: { model: \"tinted_sword.json\" } }")
+				.dyeableHat("dyed_hat");
+		ReloadReport report = fx.reload();
+		assertThat(report.loaded().equals(List.of("dyed_hat", "off_hat", "plain_hat", "tinted_sword")), "loaded: " + report);
+		for (String id : List.of("plain_hat", "off_hat", "tinted_sword")) {
+			List<ReloadReport.Warning> warnings = report.warnings().stream().filter(w -> w.skinId().equals(id)).toList();
+			assertThat(warnings.size() == 1 && !warnings.getFirst().prominent() && warnings.getFirst().file().getFileName().toString().equals(id + ".json")
+					&& warnings.getFirst().message().equals(id + ".json marks Tint faces but the skin isn't dyeable; they keep their painted colours"),
+					id + "'s warnings: " + warnings);
+		}
+		assertThat(report.warnings().stream().noneMatch(w -> w.skinId().equals("dyed_hat")), "the Dyeable Hat was warned about: " + report.warnings());
+		helper.succeed();
+	}
+
 	private static boolean warned(ReloadReport report, String slot, boolean prominent) {
 		return report.warnings().stream().anyMatch(w -> w.skinId().equals("santa_hat_test") && w.prominent() == prominent && w.message().contains("\"" + slot + "\""));
 	}

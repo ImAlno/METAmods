@@ -288,6 +288,13 @@ public final class RevertTests {
 		assertThat(fx.reload().lookTakenAway(), "narrowing materials took no Look away");
 		fx.skin("candy_sword_test", "sword");
 		assertThat(!fx.reload().lookTakenAway(), "dropping materials took a Look away");
+
+		fx.dyeableHat("cowboy_hat_test");
+		assertThat(!fx.reload().lookTakenAway(), "adding a Dyeable Hat took a Look away");
+		fx.tintedHat("cowboy_hat_test", "{ model: \"cowboy_hat_test.json\" }");
+		assertThat(fx.reload().lookTakenAway(), "turning dyeable off took no Look away");
+		fx.dyeableHat("cowboy_hat_test");
+		assertThat(!fx.reload().lookTakenAway(), "turning dyeable on took a Look away");
 		helper.succeed();
 	}
 

@@ -208,6 +208,7 @@ public final class SkinMenu {
 				.setName(Component.literal(skin.skin().displayName()).withStyle(ChatFormatting.YELLOW))
 				.addLoreLine(Component.literal("Fits " + skin.fit().what()).withStyle(ChatFormatting.GRAY))
 				.hideDefaultTooltip();
+		if (skin.skin().dyeable()) icon.addLoreLine(Component.literal(SkinSummary.DYE_HINT).withStyle(ChatFormatting.GRAY));
 		PerkLines.of(skin.skin().perks()).forEach(icon::addLoreLine);
 		skin.skin().description().ifPresent(d -> icon.addLoreLine(Component.literal(d).withStyle(ChatFormatting.GRAY)));
 		icon.addLoreLine(skin.applied() ? Component.literal("✔ Applied to an item").withStyle(ChatFormatting.GREEN)

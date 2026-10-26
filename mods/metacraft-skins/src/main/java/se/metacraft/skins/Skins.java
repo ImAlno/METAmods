@@ -184,8 +184,9 @@ public final class Skins {
 
 	/**
 	 * Does going from {@code before} to {@code after} take a Look off items that showed one? A skin that
-	 * loaded before is Dormant or gone, has another Kind, or allows fewer Materials than it did. (A
-	 * reload that brings a Look back takes none away: items show it from their next re-send.)
+	 * loaded before is Dormant or gone, has another Kind, allows fewer Materials than it did, or is a
+	 * Dyeable Hat no longer. (A reload that brings a Look back takes none away: items show it from
+	 * their next re-send.)
 	 */
 	private static boolean tookALookAway(Map<String, Entry> before, Map<String, Entry> after) {
 		for (Entry was : before.values()) {
@@ -193,7 +194,7 @@ public final class Skins {
 			Entry now = after.get(was.id());
 			if (now == null || now.loaded().isEmpty()) return true;
 			SkinFolder.Loaded old = was.loaded().get(), next = now.loaded().get();
-			if (old.kind() != next.kind() || narrowed(old.materials(), next.materials())) return true;
+			if (old.kind() != next.kind() || narrowed(old.materials(), next.materials()) || old.dyeable() && !next.dyeable()) return true;
 		}
 		return false;
 	}
@@ -399,7 +400,8 @@ public final class Skins {
 
 	/**
 	 * What {@code viewer} is sent of a token: Polymer's client copy ({@code client}) named
-	 * "Skin Token: <Skin>" (gold, no glint), with the lore "Fits any <Kind>" (or "Fits leather and turtle helmets"), the Perk lines, the description, a
+	 * "Skin Token: <Skin>" (gold, no glint), with the lore "Fits any <Kind>" (or "Fits leather and turtle helmets"), for a Dyeable
+	 * Hat "Dye the helmet to recolour it", the Perk lines, the description, a
 	 * blank line and "Right-click to claim", or, for a viewer who owns the skin, "✔ You already own
 	 * this skin — trade it away". A token for an unknown or Dormant skin reads "Unknown skin token: <id>".
 	 */
@@ -416,6 +418,7 @@ public final class Skins {
 		boolean owned = viewer != null && ownership.read(viewer) instanceof OwnershipStore.Readable(var record) && record.skins().containsKey(id);
 		List<Component> lines = new ArrayList<>();
 		lines.add(plain("Fits " + loaded.fit().what(), ChatFormatting.GRAY));
+		if (loaded.dyeable()) lines.add(plain(SkinSummary.DYE_HINT, ChatFormatting.GRAY));
 		lines.addAll(PerkLines.of(inEffect(loaded.perks())));
 		loaded.description().ifPresent(d -> lines.add(plain(d, ChatFormatting.GRAY)));
 		lines.add(Component.empty());
@@ -770,6 +773,7 @@ public final class Skins {
 
 	private SkinSummary summary(Entry e) {
 		return new SkinSummary(e.id(), e.loaded().map(SkinFolder.Loaded::name), e.kind(), e.loaded().flatMap(SkinFolder.Loaded::materials),
+				e.loaded().map(SkinFolder.Loaded::dyeable).orElse(false),
 				e.loaded().flatMap(SkinFolder.Loaded::description),
 				e.loaded().map(l -> inEffect(l.perks())).orElse(List.of()), e.dormantReason());
 	}

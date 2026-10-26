@@ -266,6 +266,27 @@ public final class SkinMenuTests {
 		helper.succeed();
 	}
 
+	/** A Dyeable Hat says, under what it fits, that dyeing the helmet recolours it: in "Your Skins" and in its Apply screen's preview. */
+	@GameTest
+	public void aDyeableHatSaysDyeingRecoloursIt(GameTestHelper helper) {
+		SkinFixtures fx = SkinFixtures.create().dyeableHat("cowboy_hat_test", "[\"leather\"]");
+		fx.reload();
+		SkinFixtures.Listening player = SkinFixtures.join(helper);
+		try {
+			player.getInventory().clearContent();
+			fx.skins.grant(player.nameAndId(), "cowboy_hat_test");
+			SkinMenu.open(player, fx.skins);
+			assertThat(lore(player, 0).equals(List.of("Fits leather helmets", "Dye the helmet to recolour it", "Unapplied", "Click to apply or remove")),
+					"the hat's tooltip: " + lore(player, 0));
+			click(player, 0);
+			assertThat(lore(player, PREVIEW).equals(List.of("Fits leather helmets", "Dye the helmet to recolour it", "Unapplied")),
+					"the preview's tooltip: " + lore(player, PREVIEW));
+		} finally {
+			helper.getLevel().getServer().getPlayerList().remove(player);
+		}
+		helper.succeed();
+	}
+
 	private record Shown(String name, net.minecraft.world.item.Item icon, String fits, String carrying) {}
 
 	@GameTest

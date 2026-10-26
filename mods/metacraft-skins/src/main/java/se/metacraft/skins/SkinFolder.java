@@ -33,7 +33,9 @@ import java.util.stream.Collectors;
  * the skin's definition and its files in the pack, cleaning the export up on the way: texture
  * references rewritten to {@code skins:item/<id>/<file name>}, a missing particle texture filled
  * in, {@code .png.mcmeta} files carried along, and missing display transforms warned about (never
- * invented). Anything wrong rejects the whole skin with the file at fault and the reason.
+ * invented). A Dyeable Hat also gets grey copies of its tinted textures ({@link GreyCopies}), a
+ * dyed model and an item definition that switches between the two on the helmet's dye. Anything
+ * wrong rejects the whole skin with the file at fault and the reason.
  * Public only for {@link #NAMESPACE}.
  */
 public final class SkinFolder {
@@ -56,8 +58,9 @@ public final class SkinFolder {
 	/**
 	 * A skin that loaded: what later tickets need of its definition, and its files in the pack by
 	 * path. {@code materials} is the Materials it's limited to, in vanilla order; empty if it fits every one.
+	 * {@code dyeable}: it's a Dyeable Hat.
 	 */
-	record Loaded(String id, String name, Kind kind, Optional<List<Material>> materials, Optional<String> description, List<Perk> perks,
+	record Loaded(String id, String name, Kind kind, Optional<List<Material>> materials, boolean dyeable, Optional<String> description, List<Perk> perks,
 				Map<String, byte[]> files) {
 		Fit fit() {
 			return new Fit(kind, materials);
@@ -117,17 +120,29 @@ public final class SkinFolder {
 		List<Perk> perks = definition.containsKey("perks") ? PerkReader.read(definition.get("perks"), kind, definitionFile) : List.of();
 
 		if (!(definition.get("look") instanceof JsonObject look)) throw new Rejected(definitionFile, lookShape(kind) + ", and look is missing or not an object");
+		boolean dyeable = dyeable(look, kind, definitionFile);
 		Set<String> expected = kind.isSpear() ? Set.of("icon", "in_hand") : Set.of("model");
-		if (!look.keySet().equals(expected)) throw new Rejected(definitionFile, lookShape(kind) + ", not look: { " + String.join(", ", look.keySet()) + " }");
+		Set<String> given = look.keySet().stream().filter(k -> !k.equals("dyeable")).collect(Collectors.toSet());
+		if (!given.equals(expected)) throw new Rejected(definitionFile, lookShape(kind) + ", not look: { " + String.join(", ", look.keySet()) + " }");
 
 		Map<String, byte[]> files = new TreeMap<>();
 		Map<String, String> modelIds = new LinkedHashMap<>();
 		for (String slot : kind.isSpear() ? List.of("icon", "in_hand") : List.of("model")) {
 			String file = requiredString(look, slot, definitionFile);
-			modelIds.put(slot, model(folder, id, kind, slot, file, definitionFile, files, warnings));
+			modelIds.put(slot, model(folder, id, kind, slot, file, dyeable, definitionFile, files, modelIds, warnings));
 		}
 		files.put("assets/" + NAMESPACE + "/items/" + id + ".json", itemDefinition(kind, modelIds).getBytes(StandardCharsets.UTF_8));
-		return new Loaded(id, name, kind, materials, description, perks, files);
+		return new Loaded(id, name, kind, materials, dyeable, description, perks, files);
+	}
+
+	/** {@code look.dyeable}: true or false, and only on a helmet skin; leaving it out is false. */
+	private static boolean dyeable(JsonObject look, Kind kind, Path file) throws Rejected {
+		if (!look.containsKey("dyeable")) return false;
+		if (kind != Kind.HELMET) {
+			throw new Rejected(file, "\"dyeable\" is only for helmet skins (Dyeable Hats), not " + new Fit(kind, Optional.empty()).aOne());
+		}
+		if (look.get("dyeable") instanceof JsonPrimitive p && p.getValue() instanceof Boolean b) return b;
+		throw new Rejected(file, "\"dyeable\" must be true or false");
 	}
 
 	/**
@@ -166,9 +181,13 @@ public final class SkinFolder {
 		throw new Rejected(file, "field \"" + key + "\" must be a non-empty string");
 	}
 
-	/** Cleans up one model of the Look and adds it and its textures to {@code files}; returns its model id. */
-	private static String model(Path folder, String id, Kind kind, String slot, String fileName, Path definitionFile,
-								Map<String, byte[]> files, Consumer<ReloadReport.Warning> warnings) throws Rejected {
+	/**
+	 * Cleans up one model of the Look and adds it and its textures to {@code files}; returns its model
+	 * id. For a Dyeable Hat it also adds the dyed model and its grey copies, and puts the dyed model's
+	 * id in {@code modelIds} under {@code "dyed"}.
+	 */
+	private static String model(Path folder, String id, Kind kind, String slot, String fileName, boolean dyeable, Path definitionFile,
+								Map<String, byte[]> files, Map<String, String> modelIds, Consumer<ReloadReport.Warning> warnings) throws Rejected {
 		if (!fileName.endsWith(".json") || !PATH_SEGMENT.matcher(fileName).matches()) {
 			throw new Rejected(definitionFile, "look." + slot + " must name a .json file in the skin folder (a-z, 0-9, _, - and .), not \"" + fileName + "\"");
 		}
@@ -207,10 +226,107 @@ public final class SkinFolder {
 		}
 
 		if (!model.has("parent")) warnAboutDisplay(id, kind, slot, model, modelFile, warnings);
+		boolean tinted = !tintFaces(model).isEmpty();
+		if (dyeable && !tinted) {
+			throw new Rejected(modelFile, "marks no Tint faces (\"tintindex\") in its own elements, so the skin can't be dyeable"
+					+ (model.has("parent") ? " (Tint faces in its parent don't count)" : ""));
+		}
+		if (!dyeable && tinted) {
+			warnings.accept(new ReloadReport.Warning(id, modelFile, fileName + " marks Tint faces but the skin isn't dyeable; they keep their painted colours", false));
+		}
 
 		String base = fileName.substring(0, fileName.length() - ".json".length());
 		files.put("assets/" + NAMESPACE + "/models/item/" + id + "/" + fileName, GSON.toJson(model).getBytes(StandardCharsets.UTF_8));
+		if (dyeable) modelIds.put("dyed", dyedModel(folder, id, fileName, model, modelFile, files));
 		return NAMESPACE + ":item/" + id + "/" + base;
+	}
+
+	/** The faces of the model's own elements that are marked Tint: a {@code tintindex} of 0 or more. A parent's don't count. */
+	private static List<com.google.gson.JsonObject> tintFaces(com.google.gson.JsonObject model) {
+		List<com.google.gson.JsonObject> tinted = new ArrayList<>();
+		if (!(model.get("elements") instanceof JsonArray elements)) return tinted;
+		for (var element : elements) {
+			if (!(element instanceof com.google.gson.JsonObject e) || !(e.get("faces") instanceof com.google.gson.JsonObject faces)) continue;
+			for (var face : faces.asMap().values()) {
+				if (face instanceof com.google.gson.JsonObject f && f.get("tintindex") instanceof com.google.gson.JsonPrimitive index
+						&& index.isNumber() && index.getAsDouble() >= 0) {
+					tinted.add(f);
+				}
+			}
+		}
+		return tinted;
+	}
+
+	/**
+	 * A Dyeable Hat's dyed model: a full copy of the cleaned-up {@code natural} model (not a child, so
+	 * a texture that tinted and untinted faces share stays natural on the untinted ones) in which each
+	 * Tint face points at a new texture key, {@code dyed_<key>}, holding the grey copy of its texture,
+	 * with {@code tintindex} 0. Adds it and the grey copies (with any {@code .png.mcmeta}) to
+	 * {@code files} under {@code dyed/}; returns its model id.
+	 */
+	private static String dyedModel(Path folder, String id, String fileName, com.google.gson.JsonObject natural, Path modelFile,
+									Map<String, byte[]> files) throws Rejected {
+		com.google.gson.JsonObject dyed = natural.deepCopy();
+		com.google.gson.JsonObject textures = dyed.has("textures") ? dyed.getAsJsonObject("textures") : new com.google.gson.JsonObject();
+		Map<String, String> dyedKeys = new LinkedHashMap<>();
+		Map<String, byte[]> tintedPngs = new LinkedHashMap<>();
+		for (com.google.gson.JsonObject face : tintFaces(dyed)) {
+			if (!(face.get("texture") instanceof com.google.gson.JsonPrimitive ref) || !ref.isString() || !ref.getAsString().startsWith("#")) {
+				throw new Rejected(modelFile, "a Tint face's texture must be a #reference to one of the model's textures, not " + face.get("texture"));
+			}
+			String key = ref.getAsString().substring(1);
+			if (!dyedKeys.containsKey(key)) {
+				com.google.gson.JsonElement entry = ownTexture(textures, key, modelFile);
+				String name = sprite(entry).substring((NAMESPACE + ":item/" + id + "/").length());
+				String dyedKey = "dyed_" + key;
+				while (textures.has(dyedKey)) dyedKey += "_";
+				com.google.gson.JsonElement grey = entry.deepCopy();
+				String greyId = NAMESPACE + ":item/" + id + "/dyed/" + name;
+				if (grey.isJsonObject()) grey.getAsJsonObject().addProperty("sprite", greyId);
+				else grey = new com.google.gson.JsonPrimitive(greyId);
+				textures.add(dyedKey, grey);
+				dyedKeys.put(key, dyedKey);
+				tintedPngs.put(name, files.get(texturePath(id, name)));
+			}
+			face.addProperty("texture", "#" + dyedKeys.get(key));
+			face.addProperty("tintindex", 0);
+		}
+
+		Map<String, byte[]> greys;
+		try {
+			greys = GreyCopies.of(tintedPngs);
+		} catch (GreyCopies.Unreadable e) {
+			throw new Rejected(folder.resolve(e.name + ".png"), "a tinted texture the mod must make a grey copy of is " + e.getMessage());
+		}
+		for (var grey : greys.entrySet()) {
+			String path = "assets/" + NAMESPACE + "/textures/item/" + id + "/dyed/" + grey.getKey() + ".png";
+			files.put(path, grey.getValue());
+			byte[] mcmeta = files.get(texturePath(id, grey.getKey()) + ".mcmeta");
+			if (mcmeta != null) files.put(path + ".mcmeta", mcmeta);
+		}
+		files.put("assets/" + NAMESPACE + "/models/item/" + id + "/dyed/" + fileName, GSON.toJson(dyed).getBytes(StandardCharsets.UTF_8));
+		return NAMESPACE + ":item/" + id + "/dyed/" + fileName.substring(0, fileName.length() - ".json".length());
+	}
+
+	/** The texture entry a Tint face's {@code #key} comes to, following {@code #} references within the model. */
+	private static com.google.gson.JsonElement ownTexture(com.google.gson.JsonObject textures, String key, Path modelFile) throws Rejected {
+		Set<String> seen = new java.util.HashSet<>();
+		for (String at = key; seen.add(at) && textures.has(at); ) {
+			com.google.gson.JsonElement entry = textures.get(at);
+			String sprite = sprite(entry);
+			if (!sprite.startsWith("#")) return entry;
+			at = sprite.substring(1);
+		}
+		throw new Rejected(modelFile, "a Tint face's texture \"#" + key + "\" isn't one of the model's own textures, so it can't be dyed");
+	}
+
+	/** A cleaned-up texture entry's sprite: the name itself, or a {@code { sprite }}'s. */
+	private static String sprite(com.google.gson.JsonElement entry) {
+		return (entry.isJsonObject() ? entry.getAsJsonObject().get("sprite") : entry).getAsString();
+	}
+
+	private static String texturePath(String id, String name) {
+		return "assets/" + NAMESPACE + "/textures/item/" + id + "/" + name + ".png";
 	}
 
 	/** Matches a texture reference to a .png in the folder by file name, copies it (and its .mcmeta), returns the new reference. */
@@ -223,7 +339,7 @@ public final class SkinFolder {
 			throw new Rejected(modelFile, "texture \"" + ref + "\" (\"" + key + "\") has no matching " + name + ".png in the skin folder"
 					+ " (texture file names may only hold a-z, 0-9, _, - and .)");
 		}
-		String path = "assets/" + NAMESPACE + "/textures/item/" + id + "/" + name + ".png";
+		String path = texturePath(id, name);
 		try {
 			files.put(path, Files.readAllBytes(png));
 			Path mcmeta = folder.resolve(name + ".png.mcmeta");
@@ -258,7 +374,11 @@ public final class SkinFolder {
 		}
 	}
 
-	/** The item model definition at {@code assets/skins/items/<id>.json}; a spear's switches on display context, as vanilla's does. */
+	/**
+	 * The item model definition at {@code assets/skins/items/<id>.json}. A spear's switches on display
+	 * context, as vanilla's does; a Dyeable Hat's on whether the helmet is dyed, the dyed model taking
+	 * the dye (vanilla's wolf armour works the same way).
+	 */
 	private static String itemDefinition(Kind kind, Map<String, String> models) {
 		var root = new com.google.gson.JsonObject();
 		if (kind.isSpear()) {
@@ -276,6 +396,21 @@ public final class SkinFolder {
 			select.add("fallback", plainModel(models.get("in_hand")));
 			root.add("model", select);
 			root.addProperty("swap_animation_scale", SPEAR_SWAP_ANIMATION_SCALE);
+		} else if (models.containsKey("dyed")) {
+			var condition = new com.google.gson.JsonObject();
+			condition.addProperty("type", "minecraft:condition");
+			condition.addProperty("property", "minecraft:has_component");
+			condition.addProperty("component", "minecraft:dyed_color");
+			condition.add("on_false", plainModel(models.get("model")));
+			var dyed = plainModel(models.get("dyed"));
+			var dye = new com.google.gson.JsonObject();
+			dye.addProperty("type", "minecraft:dye");
+			dye.addProperty("default", -1);   // never used: on_true is only drawn with a colour
+			JsonArray tints = new JsonArray();
+			tints.add(dye);
+			dyed.add("tints", tints);
+			condition.add("on_true", dyed);
+			root.add("model", condition);
 		} else {
 			root.add("model", plainModel(models.get("model")));
 		}

@@ -145,6 +145,24 @@ public final class ClaimMenuTests {
 		helper.succeed();
 	}
 
+	/** A Dyeable Hat in the centre says, under what it fits, that dyeing the helmet recolours it. */
+	@GameTest
+	public void aDyeableHatSaysDyeingRecoloursIt(GameTestHelper helper) {
+		SkinFixtures fx = SkinFixtures.create().dyeableHat("cowboy_hat_test");
+		fx.reload();
+		SkinFixtures.Listening player = SkinFixtures.join(helper);
+		try {
+			player.getInventory().clearContent();
+			player.getInventory().setItem(0, SkinToken.of("cowboy_hat_test", 1));
+			ClaimMenu.open(player, fx.skins, player.getInventory().getItem(0));
+			assertThat(lore(player, SKIN).equals(List.of("Fits any helmet", "Dye the helmet to recolour it", "Claim to own this skin")),
+					"the skin's tooltip: " + lore(player, SKIN));
+		} finally {
+			helper.getLevel().getServer().getPlayerList().remove(player);
+		}
+		helper.succeed();
+	}
+
 	private static ItemStack slot(SkinFixtures.Listening player, int slot) {
 		return player.containerMenu.getSlot(slot).getItem();
 	}

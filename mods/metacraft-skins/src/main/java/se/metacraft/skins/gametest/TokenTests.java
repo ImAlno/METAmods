@@ -135,6 +135,17 @@ public final class TokenTests {
 		helper.succeed();
 	}
 
+	/** A Dyeable Hat's token says, in gray under what it fits, that dyeing the helmet recolours it. */
+	@GameTest
+	public void aDyeableHatsTokenSaysDyeingRecoloursIt(GameTestHelper helper) {
+		SkinFixtures fx = SkinFixtures.create().dyeableHat("cowboy_hat_test", "[\"leather\"]");
+		fx.reload();
+		List<Component> lore = lore(view(helper, fx, SkinToken.of("cowboy_hat_test", 1), helper.makeMockServerPlayerInLevel()));
+		assertThat(text(lore).equals(List.of("Fits leather helmets", "Dye the helmet to recolour it", "", "Right-click to claim")), "the token reads " + text(lore));
+		assertLine(lore.get(1), "Dye the helmet to recolour it", ChatFormatting.GRAY);
+		helper.succeed();
+	}
+
 	@GameTest
 	public void claimingMakesThePlayerTheOwnerAndUsesUpOneToken(GameTestHelper helper) {
 		SkinFixtures fx = SkinFixtures.create().skin("crown_test", "helmet", "Crown", null);

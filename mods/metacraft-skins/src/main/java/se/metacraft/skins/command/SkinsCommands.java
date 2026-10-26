@@ -53,7 +53,8 @@ import java.util.stream.Collectors;
  * subcommands so far:
  * <ul>
  *   <li>{@code /skins} alone ({@code metacraft-skins:menu}, everyone): opens the player's Skin Menu;</li>
- *   <li>{@code list} ({@code metacraft-skins:list}, gamemasters): every skin, its Kind and any Materials it's limited to, and why a Dormant one failed;</li>
+ *   <li>{@code list} ({@code metacraft-skins:list}, gamemasters): every skin, its Kind, any Materials it's limited to and whether
+ *       it's a Dyeable Hat ({@code cowboy_hat (helmet: leather, dyeable)}), and why a Dormant one failed;</li>
  *   <li>{@code reload} ({@code metacraft-skins:reload}, admins): re-read the skins and settings and rebuild the pack;
  *       a changed pack is pushed to everyone online, and a reload that took a Look away sends everyone online their items
  *       again. Vanilla {@code /reload} never touches skins;</li>
@@ -145,7 +146,8 @@ public final class SkinsCommands {
 		for (SkinSummary skin : all) {
 			var line = Component.literal(skin.id()).withStyle(skin.dormant() ? ChatFormatting.GRAY : ChatFormatting.WHITE)
 					.append(Component.literal(" (" + skin.kind().map(k -> k.id()).orElse("unknown Kind")
-							+ skin.materials().map(m -> ": " + m.stream().map(Material::id).collect(Collectors.joining(", "))).orElse("") + ")")
+							+ skin.materials().map(m -> ": " + m.stream().map(Material::id).collect(Collectors.joining(", "))).orElse("")
+							+ (skin.dyeable() ? ", dyeable" : "") + ")")
 							.withStyle(ChatFormatting.GRAY));
 			skin.dormantReason().ifPresent(reason -> line.append(Component.literal(" Dormant: " + reason).withStyle(ChatFormatting.RED)));
 			source.sendSuccess(() -> line, false);

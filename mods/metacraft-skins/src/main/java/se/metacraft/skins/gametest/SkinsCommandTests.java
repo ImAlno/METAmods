@@ -112,10 +112,16 @@ public final class SkinsCommandTests {
 			assertThat(list.stream().anyMatch(l -> l.contains("hat") && l.contains("Dormant") && l.contains("unknown kind")), "list lacks the Dormant hat: " + list);
 			// A limited skin's Materials follow its Kind, in vanilla order whatever skin.json5's order; an unlimited one is unchanged.
 			fx.limited("cap_list_test", "helmet", "[\"turtle\", \"leather\"]");
+			fx.dyeableHat("dyed_cap_list_test", "[\"leather\"]").dyeableHat("dyed_hat_list_test");
 			run(server, LevelBasedPermissionSet.ADMIN, "skins reload");
 			List<String> limited = run(server, LevelBasedPermissionSet.GAMEMASTER, "skins list");
 			assertThat(limited.contains("cap_list_test (helmet: leather, turtle)") && limited.contains("candy_cane_test (sword)"), "the list with Materials: " + limited);
+			// A Dyeable Hat says so, after its Materials if it has any. (One reload for all three, and back: only the last few builds stay downloadable.)
+			assertThat(limited.contains("dyed_cap_list_test (helmet: leather, dyeable)") && limited.contains("dyed_hat_list_test (helmet, dyeable)"),
+					"the list with Dyeable Hats: " + limited);
 			fx.delete("cap_list_test");
+			fx.delete("dyed_cap_list_test");
+			fx.delete("dyed_hat_list_test");
 			run(server, LevelBasedPermissionSet.ADMIN, "skins reload");
 			ownershipCommands(helper, fx);
 			skinMenuAndSkinnedItemsReachPlayers(helper, fx);

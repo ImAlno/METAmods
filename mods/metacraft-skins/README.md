@@ -97,7 +97,7 @@ Drop the export in as it is, then run `/skins reload`. The mod cleans it up as i
 | `name` | required, plain text |
 | `kind` | required: `sword`, `axe`, `pickaxe`, `shovel`, `hoe`, `mace`, `spear`, `helmet`, `chestplate`, `leggings`, `boots` or `elytra` |
 | `materials` | optional: a list of one or more of the Kind's Materials, below; leave it out to fit every Material |
-| `look` | required: `{ model: "<file>.json" }`, except a spear, which takes `{ icon: "<file>.json", in_hand: "<file>.json" }` |
+| `look` | required: `{ model: "<file>.json" }`, except a spear, which takes `{ icon: "<file>.json", in_hand: "<file>.json" }`. A helmet may add `dyeable: true` to be a Dyeable Hat, below (`false` is the same as leaving it out) |
 | `description` | optional, one line |
 | `perks` | optional; leave it out for a Look-only skin |
 
@@ -149,6 +149,27 @@ iron-only sword skin shows on an iron sword, a leather-only hat on a leather hel
 - **Everything else** (the mace too) uses one model everywhere.
 
 The item's own name (an anvil rename too) and its enchantment glint are never touched.
+
+**Dyeable Hats.** A helmet skin can follow the helmet's dye. In Blockbench, tick "Tint" on the faces
+that should take the colour (the felt of a hat, say, but not its band), then set
+`look: { model: "cowboy_hat.json", dyeable: true }`. There is nothing else to paint:
+
+- undyed, the hat shows its natural colours, exactly as exported;
+- dyed, its Tinted Parts take the helmet's colour wherever the hat is drawn (inventories, hands, the
+  ground, frames, the wearer's head), and every other face keeps its painted colours;
+- players dye a leather helmet carrying it with dyes in the crafting grid and wash it in a water
+  cauldron, as for any leather armour, and it keeps the skin throughout.
+
+The mod makes the dyed version itself. It writes a grey copy of every texture a Tint face uses, at
+`skins:item/<skin-id>/dyed/<name>` (an animated texture's `.mcmeta` goes along), shading each pixel
+around one light grey by its brightness, with one average across all the hat's tinted textures. It
+also writes a dyed model, `skins:item/<skin-id>/dyed/<model>`: a full copy of yours in which only the
+Tint faces use the grey copies, so a texture that tinted and untinted faces share stays natural on the
+untinted ones. The item definition shows your model until the helmet has a colour, and the dyed model
+from then on. A Tint face is any face with a `"tintindex"` of 0 or more, in the model's own `elements`
+(Tint faces that are only in a `parent` don't count). Without `dyeable`, such faces keep their painted
+colours, and the reload warns about them. Tokens, the Claim screen and the Skin Menu show the natural
+colours, with "Dye the helmet to recolour it" under "Fits …".
 
 ## Perks
 
@@ -271,6 +292,9 @@ file and the reason, shown to whoever ran `/skins reload`, and listed by `/skins
 
 - broken json5, or an unknown field anywhere;
 - a missing `name`, `kind` or `look`, an unknown Kind, or the wrong `look` shape for the Kind;
+- `dyeable` on a skin that isn't a helmet (a spear's look too), a `dyeable` that isn't `true` or
+  `false`, or `dyeable: true` on a model that marks no Tint faces in its own `elements` (ones only in a
+  `parent` don't count);
 - a `materials` that isn't a list of names, an empty list, an unknown Material (`wooden` and `golden`
   get a hint), a Material the Kind doesn't come in (`turtle` on a sword, `wood` on boots), the same
   Material twice, or any `materials` on a mace or elytra skin;
@@ -289,16 +313,19 @@ packs never pushes a resource pack by surprise. `/skins reload`:
 2. rebuilds the skins pack;
 3. if the pack changed, sends it to everyone online (each gets a short loading screen), and otherwise
    sends nothing;
-4. if it took a Look away (a skin went Dormant or missing, its `kind` changed, or its `materials` list
-   narrowed), sends everyone online their items and worn equipment again, so the Look leaves every
-   screen at once; any other reload sends no items;
+4. if it took a Look away (a skin went Dormant or missing, its `kind` changed, its `materials` list
+   narrowed, or `dyeable` was turned off), sends everyone online their items and worn equipment again,
+   so the Look leaves every screen at once; any other reload sends no items;
 5. reports to you: how many skins loaded, how many are Dormant and why, every model warning, and
-   whether the pack changed (with the start of its SHA-1).
+   whether the pack changed (with the start of its SHA-1). Besides the display transforms (see
+   [Writing a skin](#writing-a-skin)), a model that marks Tint faces on a skin that isn't dyeable gets a
+   minor warning: "<model> marks Tint faces but the skin isn't dyeable; they keep their painted colours".
 
 The pack is built the same way every time, so the same skins give the same SHA-1. Only Looks are in
 it: **editing a skin's name, description or Perks changes every token and Skinned Item at once, and
-doesn't change the pack**, so nobody downloads anything. Adding, removing or changing a model or
-texture does. So you choose when players see a loading screen: batch Look changes into one reload.
+doesn't change the pack**, so nobody downloads anything, and nor does editing its `materials`.
+Adding, removing or changing a model or texture does, and so does turning `dyeable` on or off. So you
+choose when players see a loading screen: batch Look changes into one reload.
 
 Delivery: with metacraft-resource-packs the skins pack is a separate pack, sent at join with the
 others; the last three builds stay downloadable, so a player who was sent one just before another
@@ -350,7 +377,8 @@ vanilla level to fall back on when no permissions mod is installed. Skin ids tab
   Applied in another world, or Dormant. It can't say which item carries a skin. A damaged file says so.
 - **`list`** shows every skin folder with its Kind and, for a Dormant skin, why it didn't load:
   `candy_sword (sword)`. A skin limited to Materials lists them after its Kind, in the order of the
-  Materials table: `crown (helmet: leather, turtle)`.
+  Materials table: `crown (helmet: leather, turtle)`. A Dyeable Hat says so last:
+  `cowboy_hat (helmet: leather, dyeable)`, or `cowboy_hat (helmet, dyeable)` with no Materials.
 - **`grant`** makes a player own a skin without a token. Refused if they already own it, or the skin is
   unknown or Dormant. An online player gets the claim message.
 - **`revoke`** takes a skin away, Dormant ones too. The item carrying it reverts wherever it is. An online

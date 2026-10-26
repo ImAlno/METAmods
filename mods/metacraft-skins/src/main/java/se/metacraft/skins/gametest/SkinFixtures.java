@@ -27,7 +27,9 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.CommonListenerCookie;
 import net.minecraft.world.phys.Vec3;
 
+import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
@@ -41,6 +43,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Stream;
 import java.util.zip.ZipInputStream;
+import javax.imageio.ImageIO;
 
 /**
  * A server root of its own for one game test: a temporary directory holding
@@ -144,6 +147,57 @@ final class SkinFixtures {
 				.png(id, id);
 	}
 
+	/**
+	 * A hat (helmet) named "<id> skin" whose model marks Tint faces, with real textures: texture
+	 * {@code 0} ({@code felt.png}) is tinted on the north face ({@code tintindex} 1) and untinted on the
+	 * south (no {@code tintindex}) and east ({@code -1}) faces, and texture {@code 1} ({@code band.png})
+	 * is never tinted. {@code look} is the json5 look object, e.g. {@code { model: "<id>.json" }}.
+	 */
+	SkinFixtures tintedHat(String id, String look) {
+		return hat(id, look, "");
+	}
+
+	/** {@link #tintedHat} as a Dyeable Hat: {@code look: { model, dyeable: true }}, fitting every helmet. */
+	SkinFixtures dyeableHat(String id) {
+		return hat(id, "{ model: \"" + id + ".json\", dyeable: true }", "");
+	}
+
+	/** {@link #dyeableHat(String)} limited to Materials: {@code materials} is the json5 list, e.g. {@code ["leather"]}. */
+	SkinFixtures dyeableHat(String id, String materials) {
+		return hat(id, "{ model: \"" + id + ".json\", dyeable: true }", ", materials: " + materials);
+	}
+
+	private SkinFixtures hat(String id, String look, String more) {
+		return file(id, "skin.json5", "{ name: \"" + id + " skin\", kind: \"helmet\", look: " + look + more + " }")
+				.file(id, id + ".json", TINTED_MODEL)
+				.file(id, "felt.png", png(2, 0xFF8A5A3C, 0xFF6E4A30))
+				.file(id, "band.png", png(1, 0xFF281C16));
+	}
+
+	/** A real PNG, {@code width} pixels wide, of these ARGB pixels row by row. */
+	static byte[] png(int width, int... argb) {
+		BufferedImage image = new BufferedImage(width, argb.length / width, BufferedImage.TYPE_INT_ARGB);
+		image.setRGB(0, 0, width, argb.length / width, argb, 0, width);
+		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+		try {
+			ImageIO.write(image, "png", bytes);
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
+		return bytes.toByteArray();
+	}
+
+	/** A PNG's pixels as ARGB, row by row. */
+	static int[] pixels(byte[] png) {
+		try {
+			BufferedImage image = ImageIO.read(new ByteArrayInputStream(png));
+			if (image == null) throw fail("not a PNG");
+			return image.getRGB(0, 0, image.getWidth(), image.getHeight(), null, 0, image.getWidth());
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
+	}
+
 	/** Writes the server-wide settings file, {@code config/metacraft-skins.json5}. */
 	SkinFixtures settings(String json5) {
 		try {
@@ -174,6 +228,16 @@ final class SkinFixtures {
 			"firstperson_righthand": { "scale": [1, 1, 1] }, "firstperson_lefthand": { "scale": [1, 1, 1] },
 			"ground": { "scale": [0.5, 0.5, 0.5] }, "gui": { "rotation": [30, 225, 0] }, "head": { "scale": [1, 1, 1] },
 			"fixed": { "scale": [1, 1, 1] }, "on_shelf": { "scale": [1, 1, 1] } }""";
+
+	/** {@link #tintedHat}'s model. */
+	static final String TINTED_MODEL = """
+			{ "textures": { "0": "felt", "1": "band", "particle": "felt" },
+			"elements": [ { "from": [0, 8, 0], "to": [16, 12, 16], "faces": {
+			"north": { "uv": [0, 0, 1, 1], "texture": "#0", "tintindex": 1 },
+			"south": { "uv": [0, 0, 1, 1], "texture": "#0" },
+			"east": { "uv": [0, 0, 1, 1], "texture": "#0", "tintindex": -1 },
+			"up": { "uv": [0, 0, 1, 1], "texture": "#1" } } } ],
+			"display": %s }""".formatted(ALL_DISPLAY);
 
 	ReloadReport reload() {
 		return skins.reload();
@@ -317,6 +381,14 @@ final class SkinFixtures {
 	static String read(Path file) {
 		try {
 			return Files.readString(file, StandardCharsets.UTF_8);
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
+	}
+
+	static byte[] bytes(Path file) {
+		try {
+			return Files.readAllBytes(file);
 		} catch (IOException e) {
 			throw new UncheckedIOException(e);
 		}

@@ -125,6 +125,7 @@ public final class ClaimMenu {
 				.setName(Component.literal(skin.displayName()).withStyle(ChatFormatting.YELLOW))
 				.addLoreLine(Component.literal("Fits " + fit.what()).withStyle(ChatFormatting.GRAY))
 				.hideDefaultTooltip();
+		if (skin.dyeable()) icon.addLoreLine(Component.literal(SkinSummary.DYE_HINT).withStyle(ChatFormatting.GRAY));
 		PerkLines.of(skin.perks()).forEach(icon::addLoreLine);
 		skin.description().ifPresent(d -> icon.addLoreLine(Component.literal(d).withStyle(ChatFormatting.GRAY)));
 		icon.addLoreLine(owned ? Component.literal("Already yours").withStyle(ChatFormatting.RED)
