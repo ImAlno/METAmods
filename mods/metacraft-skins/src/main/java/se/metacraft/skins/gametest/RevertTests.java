@@ -15,15 +15,10 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.gametest.framework.GameTestHelper;
-import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
-import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
-import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
-import net.minecraft.network.protocol.game.ServerboundChunkBatchReceivedPacket;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.effect.MobEffects;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ExperienceOrb;
@@ -36,6 +31,8 @@ import net.minecraft.world.inventory.EnchantmentMenu;
 import net.minecraft.world.inventory.GrindstoneMenu;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.ItemStackTemplate;
+import net.minecraft.world.item.component.BundleContents;
 import net.minecraft.world.item.component.ItemContainerContents;
 import net.minecraft.world.item.crafting.CraftingInput;
 import net.minecraft.world.item.crafting.RecipeType;
@@ -53,13 +50,18 @@ import static se.metacraft.skins.gametest.SkinFixtures.assertThat;
 
 /**
  * Stale reverts through the Skins module: when an Owner moves or removes a skin (or it's revoked,
- * changes Kind, or the world is new), every other item carrying it is plain from then on, and the
- * server clears its marker the next time it touches the item, wherever it is. A Dormant skin's
- * markers are kept. The four overwrite invariants, and which crafting stations keep a skin.
+ * changes Kind, or the world is new), every other item carrying it is plain from then on, wherever
+ * it is, and the server clears its marker only when it tidies the Owner's own items. A Dormant
+ * skin's markers are kept. The four overwrite invariants, and which crafting stations keep a skin.
  */
 public final class RevertTests {
 
-	/** Moved: the old item, in a chest, an ender chest or a shulker box, is plain and loses its marker when next touched. */
+	/**
+	 * Moved: the old item is plain wherever it is, a chest included. The move tidies the Owner's own
+	 * items at once (inventory, ender chest, cursor, and the shulker boxes and bundles among them),
+	 * clearing the marker; nothing else is searched, so a copy in a chest keeps its stale marker,
+	 * which is never shown or used.
+	 */
 	@GameTest
 	public void aMovedSkinsOldItemRevertsWhereverItIs(GameTestHelper helper) {
 		SkinFixtures fx = SkinFixtures.create().skin("candy_sword_test", "sword");
@@ -77,28 +79,41 @@ public final class RevertTests {
 		ItemStack shulker = new ItemStack(Items.SHULKER_BOX);
 		shulker.set(DataComponents.CONTAINER, ItemContainerContents.fromItems(List.of(new ItemStack(Items.DIRT), old.copy())));
 		owner.getInventory().setItem(5, shulker);
+		ItemStack bundle = new ItemStack(Items.BUNDLE);
+		bundle.set(DataComponents.BUNDLE_CONTENTS, new BundleContents(List.of(ItemStackTemplate.fromNonEmptyStack(old.copy()))));
+		owner.getInventory().setItem(6, bundle);
+		ItemStack plainBox = new ItemStack(Items.SHULKER_BOX);
+		plainBox.set(DataComponents.CONTAINER, ItemContainerContents.fromItems(List.of(new ItemStack(Items.DIRT), new ItemStack(Items.IRON_SWORD))));
+		owner.getInventory().setItem(7, plainBox);
+		ItemContainerContents nothingToTidy = plainBox.get(DataComponents.CONTAINER);
+		owner.containerMenu.setCarried(old.copy());
 		assertThat(fx.skins.liveSkin(chest.getItem(3)).isPresent(), "a copy in a chest isn't live before the move");
 
 		assertThat(fx.skins.apply(owner, "candy_sword_test", ItemLocation.hotbar(1)).applied(), "the move was refused");
 		assertThat(fx.skins.liveSkin(chest.getItem(3)).isEmpty(), "the old item in a chest is still live");
-		// Nothing has touched them yet; the marker goes the next time the server does.
-		assertThat(chest.getItem(3).has(SkinMarker.TYPE), "the marker went before anything touched the chest");
-		assertThat(fx.skins.revertStale(chest) == 1, "touching the chest didn't revert its stale item");
-		assertThat(!chest.getItem(3).has(SkinMarker.TYPE) && chest.getItem(3).is(Items.DIAMOND_SWORD), "the chest's sword: " + chest.getItem(3));
+		assertThat(model(helper, fx, chest.getItem(3), owner).equals(Identifier.parse("minecraft:diamond_sword")),
+				"the old item in a chest is drawn as " + model(helper, fx, chest.getItem(3), owner));
+		assertThat(chest.getItem(3).has(SkinMarker.TYPE), "the move cleared a chest's copy: something searched the chest");
 
-		fx.skins.revertStale(owner);
 		assertThat(!old.has(SkinMarker.TYPE), "the old item in the owner's hotbar kept its marker");
 		assertThat(!owner.getEnderChestInventory().getItem(0).has(SkinMarker.TYPE), "the ender chest's copy kept its marker");
+		assertThat(!owner.containerMenu.getCarried().has(SkinMarker.TYPE), "the copy on the cursor kept its marker");
 		List<ItemStack> inBox = owner.getInventory().getItem(5).getOrDefault(DataComponents.CONTAINER, ItemContainerContents.EMPTY)
 				.nonEmptyItemCopyStream().toList();
 		assertThat(inBox.size() == 2 && inBox.stream().noneMatch(s -> s.has(SkinMarker.TYPE)), "the shulker box holds " + inBox);
+		List<ItemStack> inBundle = owner.getInventory().getItem(6).getOrDefault(DataComponents.BUNDLE_CONTENTS, BundleContents.EMPTY).itemCopies().toList();
+		assertThat(inBundle.size() == 1 && inBundle.stream().noneMatch(s -> s.has(SkinMarker.TYPE)), "the bundle holds " + inBundle);
+		assertThat(plainBox.get(DataComponents.CONTAINER) == nothingToTidy, "a shulker box with nothing to tidy was written back");
 		assertThat(fx.skins.liveSkin(owner.getInventory().getItem(1)).map(LiveSkin::id).equals(Optional.of("candy_sword_test")),
 				"the new item lost the skin");
-		assertThat(fx.skins.revertStale(owner) == 0, "a live item was reverted, or a stale one twice");
+		assertThat(fx.skins.tidy(owner) == 0, "a live item was reverted, or a stale one twice");
 		helper.succeed();
 	}
 
-	/** An item in the inventory of a player who was offline when the skin moved reverts as they join. */
+	/**
+	 * An item in the inventory of a player who was offline when the skin was removed is drawn plain
+	 * once they join: liveness is checked at every draw, so nothing needs to touch it as they join.
+	 */
 	@GameTest
 	public void aStaleItemInAnOfflinePlayersInventoryRevertsWhenTheyJoin(GameTestHelper helper) {
 		SkinFixtures fx = SkinFixtures.create().skin("candy_sword_test", "sword");
@@ -111,15 +126,20 @@ public final class RevertTests {
 		bob.getEnderChestInventory().setItem(7, bob.getInventory().getItem(0).copy());
 
 		assertThat(fx.skins.remove(owner.nameAndId(), "candy_sword_test") == OwnershipChange.DONE, "the remove was refused");
-		fx.skins.joined(bob);
-		assertThat(!bob.getInventory().getItem(0).has(SkinMarker.TYPE), "Bob joined still holding the removed skin's marker");
-		assertThat(!bob.getEnderChestInventory().getItem(7).has(SkinMarker.TYPE), "Bob's ender chest kept the marker");
+		fx.skins.seen(bob.nameAndId());
+		for (ItemStack stale : List.of(bob.getInventory().getItem(0), bob.getEnderChestInventory().getItem(7))) {
+			for (ServerPlayer with : List.of(bob, owner)) {
+				assertThat(model(helper, fx, stale, with).equals(Identifier.parse("minecraft:diamond_sword")), "Bob joined holding a sword drawn as "
+						+ model(helper, fx, stale, with));
+			}
+		}
 		helper.succeed();
 	}
 	/**
 	 * Duplicated copies (an exploit, a creative middle-click) all carry the skin, on the ground, in
 	 * an item frame, on an armour stand or in someone else's hand, until the Owner next moves or
-	 * removes it; then every copy reverts.
+	 * removes it; then every copy reverts. The move clears the Owner's own copy; the others keep
+	 * their stale markers, never shown or used.
 	 */
 	@GameTest
 	public void duplicatedCopiesAllCarryTheSkinUntilItMovesThenAllRevert(GameTestHelper helper) {
@@ -147,59 +167,10 @@ public final class RevertTests {
 
 		assertThat(fx.skins.apply(owner, "candy_sword_test", ItemLocation.hotbar(1)).applied(), "the move was refused");
 		for (Supplier<ItemStack> copy : copies) assertThat(fx.skins.liveSkin(copy.get()).isEmpty(), "a duplicate survived the move: " + copy.get());
-		int reverted = 0;
-		for (Entity touched : List.<Entity>of(owner, dropped, frame, stand, bob)) reverted += fx.skins.revertStale(touched);
-		assertThat(reverted == copies.size(), "reverted " + reverted + " of " + copies.size() + " copies");
-		for (Supplier<ItemStack> copy : copies) assertThat(!copy.get().has(SkinMarker.TYPE), "a duplicate kept its marker: " + copy.get());
+		assertThat(!original.has(SkinMarker.TYPE), "the Owner's own copy kept its marker");
+		assertThat(copies.stream().skip(1).allMatch(copy -> copy.get().has(SkinMarker.TYPE)), "the move searched beyond the Owner's items");
 		assertThat(fx.skins.liveSkin(owner.getInventory().getItem(1)).isPresent(), "the item it moved to lost it");
 		helper.succeed();
-	}
-
-	/**
-	 * A client that already shows a skinned item is sent it again once it's reverted: the player's
-	 * own slot, and an item frame they can see. (Worn and held items reach other players as an
-	 * equipment change, which vanilla detects from the changed stack.)
-	 */
-	@GameTest(maxTicks = 400)
-	public void aRevertedItemIsSentAgainToWhoeverCanSeeIt(GameTestHelper helper) {
-		SkinFixtures fx = SkinFixtures.create().skin("candy_sword_test", "sword");
-		fx.reload();
-		SkinFixtures.Listening player = SkinFixtures.join(helper);
-		player.arrive(helper.absoluteVec(new Vec3(1.5, 2, 1.5)));
-		player.getInventory().clearContent();
-		player.getInventory().setItem(0, new ItemStack(Items.DIAMOND_SWORD));
-		fx.skins.grant(player.nameAndId(), "candy_sword_test");
-		fx.skins.apply(player, "candy_sword_test", ItemLocation.hotbar(0));
-		ServerLevel level = helper.getLevel();
-		helper.setBlock(new BlockPos(2, 1, 2), Blocks.STONE);
-		ItemFrame frame = new ItemFrame(level, helper.absolutePos(new BlockPos(2, 2, 2)), Direction.UP);
-		frame.setItem(player.getInventory().getItem(0).copy(), false);
-		level.addFreshEntity(frame);
-		boolean[] seen = {false};
-		helper.startSequence()
-				.thenWaitUntil(() -> {
-					// As a client does: report where they are, and take the chunks they're sent.
-					level.getChunkSource().move(player);
-					player.connection.handleChunkBatchReceived(new ServerboundChunkBatchReceivedPacket(64));
-					seen[0] |= player.sent(ClientboundAddEntityPacket.class).stream().anyMatch(p -> p.getId() == frame.getId());
-					assertThat(seen[0], "the player doesn't see the frame yet");
-				})
-				.thenExecute(() -> {
-					player.inventoryMenu.broadcastChanges();
-					player.sent(Object.class);
-					fx.skins.remove(player.nameAndId(), "candy_sword_test");
-					fx.skins.revertStale(player);
-					fx.skins.revertStale(frame);
-					player.inventoryMenu.broadcastChanges();
-					List<Object> sent = player.sent(Object.class);
-					assertThat(sent.stream().anyMatch(p -> p instanceof ClientboundContainerSetSlotPacket slot && slot.getSlot() == 36
-							&& slot.getItem().is(Items.DIAMOND_SWORD) && !slot.getItem().has(SkinMarker.TYPE)), "the reverted hotbar sword wasn't sent again: " + sent);
-					assertThat(sent.stream().anyMatch(p -> p instanceof ClientboundSetEntityDataPacket data && data.id() == frame.getId()
-							&& data.packedItems().stream().anyMatch(v -> v.value() instanceof ItemStack s && s.is(Items.DIAMOND_SWORD) && !s.has(SkinMarker.TYPE))),
-							"the frame's reverted sword wasn't sent again: " + sent);
-					level.getServer().getPlayerList().remove(player);
-				})
-				.thenSucceed();
 	}
 
 	/** Revoked: the applied item reverts, and a new grant doesn't bring it back. */
@@ -214,7 +185,7 @@ public final class RevertTests {
 
 		assertThat(fx.skins.revoke(owner.nameAndId(), "candy_sword_test") == OwnershipChange.DONE, "the revoke was refused");
 		assertThat(fx.skins.liveSkin(sword).isEmpty(), "the revoked skin is still live on its item");
-		assertThat(fx.skins.revertStale(owner) == 1 && !sword.has(SkinMarker.TYPE), "the revoked skin's item kept its marker");
+		assertThat(fx.skins.tidy(owner) == 1 && !sword.has(SkinMarker.TYPE), "the revoked skin's item kept its marker");
 		fx.skins.grant(owner.nameAndId(), "candy_sword_test");
 		assertThat(state(fx.skins, owner) == OwnedSkin.State.UNAPPLIED, "granted again, the skin is " + state(fx.skins, owner));
 		helper.succeed();
@@ -233,13 +204,13 @@ public final class RevertTests {
 		fx.skins.grant(owner.nameAndId(), "candy_sword_test");
 		fx.skins.apply(owner, "candy_sword_test", ItemLocation.hotbar(0));
 		ItemStack sword = owner.getInventory().getItem(0);
-		ItemStack untouched = sword.copy();   // somewhere nothing touches it: a chest in an unloaded chunk, say
+		ItemStack untouched = sword.copy();   // somewhere the Owner's tidy never reaches: a chest, say
 
 		fx.skin("candy_sword_test", "axe", "Candy Sword", null);
 		fx.reload();
 		assertThat(state(fx.skins, owner) == OwnedSkin.State.UNAPPLIED, "after the Kind change the skin is " + state(fx.skins, owner));
 		assertThat(fx.skins.liveSkin(sword).isEmpty(), "the sword is still live as an axe skin");
-		assertThat(fx.skins.revertStale(owner) == 1 && !sword.has(SkinMarker.TYPE), "the sword kept its marker");
+		assertThat(fx.skins.tidy(owner) == 1 && !sword.has(SkinMarker.TYPE), "the sword kept its marker");
 		assertThat(fx.skins.candidates(owner, "candy_sword_test").stream().map(c -> c.item().getItem()).toList().equals(List.of(Items.IRON_AXE)),
 				"the axe skin fits " + fx.skins.candidates(owner, "candy_sword_test"));
 
@@ -273,12 +244,50 @@ public final class RevertTests {
 			Skins fresh = fx.restart(fx.root.resolve("fresh-world"));
 			SkinMenu.open(owner, fresh);
 			assertThat(SkinMenuTests.lore(owner, 0).contains("Unapplied"), "in a fresh world the skin reads " + SkinMenuTests.lore(owner, 0));
-			assertThat(fresh.revertStale(owner) == 1 && !owner.getInventory().getItem(0).has(SkinMarker.TYPE), "another world's item kept its marker");
+			assertThat(!owner.getInventory().getItem(0).has(SkinMarker.TYPE), "another world's item kept its marker as the Skin Menu opened");
 			assertThat(fresh.apply(owner, "candy_sword_test", ItemLocation.hotbar(0)).applied(), "the skin can't be applied in the fresh world");
 		} finally {
 			owner.closeContainer();
 			helper.getLevel().getServer().getPlayerList().remove(owner);
 		}
+		helper.succeed();
+	}
+
+	/**
+	 * A reload says whether it took a Look away from items that showed one, so players' items are
+	 * sent again: a skin gone Dormant or missing, a Kind change, a narrowed {@code materials}. A
+	 * reload that changes nothing, adds a skin, or brings a Look back (fixed, widened) takes none away.
+	 */
+	@GameTest
+	public void aReloadSaysWhetherItTookALookAway(GameTestHelper helper) {
+		SkinFixtures fx = SkinFixtures.create().skin("candy_sword_test", "sword");
+		assertThat(!fx.reload().lookTakenAway(), "the first reload took a Look away");
+		assertThat(!fx.reload().lookTakenAway(), "an unchanged reload took a Look away");
+		fx.skin("crown_test", "helmet");
+		assertThat(!fx.reload().lookTakenAway(), "adding a skin took a Look away");
+
+		fx.file("candy_sword_test", "candy_sword_test.json", "{ broken");
+		assertThat(fx.reload().lookTakenAway(), "a skin going Dormant took no Look away");
+		fx.skin("candy_sword_test", "sword");
+		assertThat(!fx.reload().lookTakenAway(), "fixing a skin took a Look away");
+		fx.delete("candy_sword_test");
+		assertThat(fx.reload().lookTakenAway(), "a skin's folder going took no Look away");
+		fx.skin("candy_sword_test", "sword");
+		fx.reload();
+
+		fx.skin("candy_sword_test", "axe");
+		assertThat(fx.reload().lookTakenAway(), "a Kind change took no Look away");
+		fx.skin("candy_sword_test", "sword");
+		fx.reload();
+
+		fx.limited("candy_sword_test", "sword", "[\"diamond\", \"netherite\"]");
+		assertThat(fx.reload().lookTakenAway(), "limiting an unlimited skin took no Look away");
+		fx.limited("candy_sword_test", "sword", "[\"iron\", \"diamond\", \"netherite\"]");
+		assertThat(!fx.reload().lookTakenAway(), "widening materials took a Look away");
+		fx.limited("candy_sword_test", "sword", "[\"iron\", \"netherite\"]");
+		assertThat(fx.reload().lookTakenAway(), "narrowing materials took no Look away");
+		fx.skin("candy_sword_test", "sword");
+		assertThat(!fx.reload().lookTakenAway(), "dropping materials took a Look away");
 		helper.succeed();
 	}
 
@@ -301,8 +310,8 @@ public final class RevertTests {
 			assertThat(state(fx.skins, owner) == OwnedSkin.State.DORMANT, "the broken skin is " + state(fx.skins, owner));
 			assertThat(fx.skins.liveSkin(sword).isEmpty(), "a Dormant skin is live (and would have Perks)");
 			assertThat(!model(helper, fx, sword, owner).getNamespace().equals("skins"), "a Dormant skin's item shows " + model(helper, fx, sword, owner));
-			assertThat(fx.skins.revertStale(owner) == 0 && sword.has(SkinMarker.TYPE), "a Dormant skin's marker was cleared");
-			assertThat(fx.restart().revertStale(owner) == 0 && sword.has(SkinMarker.TYPE), "a Dormant skin's marker was cleared after a restart");
+			assertThat(fx.skins.tidy(owner) == 0 && sword.has(SkinMarker.TYPE), "a Dormant skin's marker was cleared");
+			assertThat(fx.restart().tidy(owner) == 0 && sword.has(SkinMarker.TYPE), "a Dormant skin's marker was cleared after a restart");
 
 			fx.skin("candy_sword_test", "sword", "Candy Sword", null);
 			fx.reload();
@@ -356,10 +365,10 @@ public final class RevertTests {
 		assertThat(state(fx.skins, bob) == OwnedSkin.State.UNAPPLIED, "B is " + state(fx.skins, bob));
 
 		assertThat(fx.skins.apply(bob, "frost", ItemLocation.hotbar(1)).applied(), "Bob couldn't move B");
-		assertThat(fx.skins.revertStale(alice) == 0, "moving B reverted Alice's item");
+		assertThat(fx.skins.tidy(alice) == 0, "moving B reverted Alice's item");
 		assertThat(fx.skins.liveSkin(item).map(LiveSkin::id).equals(Optional.of("candy_sword_test")), "moving B took A off the item");
 		assertThat(fx.skins.remove(bob.nameAndId(), "frost") == OwnershipChange.DONE, "Bob couldn't remove B");
-		assertThat(fx.skins.revertStale(alice) == 0 && fx.skins.liveSkin(item).map(LiveSkin::id).equals(Optional.of("candy_sword_test")),
+		assertThat(fx.skins.tidy(alice) == 0 && fx.skins.liveSkin(item).map(LiveSkin::id).equals(Optional.of("candy_sword_test")),
 				"removing B took A off the item");
 		helper.succeed();
 	}
@@ -381,7 +390,7 @@ public final class RevertTests {
 
 		assertThat(fx.skins.remove(alice.nameAndId(), "candy_sword_test") == OwnershipChange.DONE, "Alice couldn't remove A");
 		assertThat(fx.skins.liveSkin(item).isEmpty(), "the item still carries a skin: " + fx.skins.liveSkin(item));
-		assertThat(fx.skins.revertStale(alice) == 1 && !item.has(SkinMarker.TYPE), "the item kept a marker: " + item.get(SkinMarker.TYPE));
+		assertThat(fx.skins.tidy(alice) == 1 && !item.has(SkinMarker.TYPE), "the item kept a marker: " + item.get(SkinMarker.TYPE));
 		assertThat(fx.skins.liveSkin(bobsCopy).isEmpty() && state(fx.skins, bob) == OwnedSkin.State.UNAPPLIED, "B came back");
 		helper.succeed();
 	}
@@ -483,7 +492,7 @@ public final class RevertTests {
 		owner.getInventory().setItem(0, pickaxe);
 
 		assertThat(fx.skins.liveSkin(pickaxe).isEmpty(), "a sword skin is live on a pickaxe");
-		assertThat(fx.skins.revertStale(owner) == 1 && !pickaxe.has(SkinMarker.TYPE), "the pickaxe kept the sword skin's marker");
+		assertThat(fx.skins.tidy(owner) == 1 && !pickaxe.has(SkinMarker.TYPE), "the pickaxe kept the sword skin's marker");
 		assertThat(state(fx.skins, owner) == OwnedSkin.State.UNAPPLIED, "the skin that fell off is " + state(fx.skins, owner));
 		assertThat(state(fx.restart(), owner) == OwnedSkin.State.UNAPPLIED, "the skin falling off wasn't saved");
 		helper.succeed();
@@ -491,7 +500,7 @@ public final class RevertTests {
 
 	/**
 	 * The netherite upgrade keeps a skin only if the skin allows netherite: a diamond-only skin
-	 * falls off (plain at once, Unapplied when the item is next touched), and one listing diamond
+	 * falls off (plain at once, Unapplied when the Owner's items are next tidied), and one listing diamond
 	 * and netherite survives it.
 	 */
 	@GameTest
@@ -512,18 +521,18 @@ public final class RevertTests {
 		assertThat(upgradedDiamondOnly.is(Items.NETHERITE_SWORD) && fx.skins.liveSkin(upgradedDiamondOnly).isEmpty(),
 				"the diamond-only skin is live on " + upgradedDiamondOnly);
 		assertThat(upgradedFine.is(Items.NETHERITE_SWORD) && fx.skins.liveSkin(upgradedFine).isPresent(), "the skin allowing netherite fell off");
-		assertThat(state(fx.skins, owner, "diamond_blade") == OwnedSkin.State.APPLIED, "the skin went Unapplied before its item was touched");
-		assertThat(fx.skins.revertStale(owner) == 1 && !upgradedDiamondOnly.has(SkinMarker.TYPE), "the upgraded sword kept the diamond-only marker");
-		assertThat(upgradedFine.has(SkinMarker.TYPE), "the touch took the netherite-allowing skin off");
+		assertThat(state(fx.skins, owner, "diamond_blade") == OwnedSkin.State.APPLIED, "the skin went Unapplied before its item was tidied");
+		assertThat(fx.skins.tidy(owner) == 1 && !upgradedDiamondOnly.has(SkinMarker.TYPE), "the upgraded sword kept the diamond-only marker");
+		assertThat(upgradedFine.has(SkinMarker.TYPE), "the tidy took the netherite-allowing skin off");
 		assertThat(state(fx.restart(), owner, "diamond_blade") == OwnedSkin.State.UNAPPLIED, "the skin that fell off: " + state(fx.skins, owner, "diamond_blade"));
 		assertThat(state(fx.skins, owner, "fine_blade") == OwnedSkin.State.APPLIED, "the skin that survived: " + state(fx.skins, owner, "fine_blade"));
 		helper.succeed();
 	}
 
 	/**
-	 * Narrowing {@code materials} takes the skin off only the items that no longer fit, item by
-	 * item as each is touched; widening the list again before an item is touched leaves it live,
-	 * as if nothing happened (unlike a Kind change).
+	 * Narrowing {@code materials} takes the skin off only the items that no longer fit, as each
+	 * Owner's items are tidied; widening the list again before an item is tidied leaves it live, as
+	 * if nothing happened (unlike a Kind change).
 	 */
 	@GameTest
 	public void narrowingMaterialsTakesTheSkinOffOnlyItemsThatNoLongerFit(GameTestHelper helper) {
@@ -542,17 +551,17 @@ public final class RevertTests {
 		fx.reload();
 		assertThat(fx.skins.liveSkin(alices).isEmpty() && fx.skins.liveSkin(carols).isEmpty(), "a narrowed skin is live on a helmet it no longer fits");
 		assertThat(fx.skins.liveSkin(bobs).isPresent(), "narrowing took the skin off the leather helmet");
-		assertThat(fx.skins.revertStale(alice) == 1 && !alices.has(SkinMarker.TYPE), "Alice's diamond helmet kept its marker");
-		assertThat(fx.skins.revertStale(bob) == 0 && fx.skins.liveSkin(bobs).isPresent(), "touching Bob's leather helmet took the skin off");
+		assertThat(fx.skins.tidy(alice) == 1 && !alices.has(SkinMarker.TYPE), "Alice's diamond helmet kept its marker");
+		assertThat(fx.skins.tidy(bob) == 0 && fx.skins.liveSkin(bobs).isPresent(), "tidying Bob's leather helmet took the skin off");
 		assertThat(state(fx.skins, alice, "cap") == OwnedSkin.State.UNAPPLIED, "Alice's skin that fell off is " + state(fx.skins, alice, "cap"));
 		assertThat(state(fx.skins, bob, "cap") == OwnedSkin.State.APPLIED, "Bob's skin is " + state(fx.skins, bob, "cap"));
 
-		// Carol's helmet wasn't touched while the list was narrow, so widening it brings her skin back.
+		// Carol's helmet wasn't tidied while the list was narrow, so widening it brings her skin back.
 		fx.limited("cap", "helmet", "[\"leather\", \"iron\"]");
 		fx.reload();
-		assertThat(fx.skins.liveSkin(carols).isPresent() && fx.skins.revertStale(carol) == 0, "widening didn't leave Carol's iron helmet live");
+		assertThat(fx.skins.liveSkin(carols).isPresent() && fx.skins.tidy(carol) == 0, "widening didn't leave Carol's iron helmet live");
 		assertThat(state(fx.skins, carol, "cap") == OwnedSkin.State.APPLIED, "Carol's skin is " + state(fx.skins, carol, "cap"));
-		assertThat(fx.skins.liveSkin(alices).isEmpty(), "Alice's touched diamond helmet came back");
+		assertThat(fx.skins.liveSkin(alices).isEmpty(), "Alice's tidied diamond helmet came back");
 		helper.succeed();
 	}
 

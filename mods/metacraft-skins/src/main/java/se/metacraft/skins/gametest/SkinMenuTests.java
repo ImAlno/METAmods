@@ -87,7 +87,38 @@ public final class SkinMenuTests {
 			assertThat(title(player).equals("Your Skins"), "removing went to " + title(player));
 			assertThat(fx.skins.ownedSkins(player.getUUID()).skins().stream().allMatch(s -> s.state() != OwnedSkin.State.APPLIED), "the skin is still applied");
 			assertThat(player.heard.contains("Candy Sword removed. Its item reverts wherever it is."), "the player was told " + player.heard);
+			assertThat(!player.getInventory().getItem(0).has(SkinMarker.TYPE), "Remove didn't tidy the player's sword");
 		} finally {
+			helper.getLevel().getServer().getPlayerList().remove(player);
+		}
+		helper.succeed();
+	}
+
+	/**
+	 * Opening the Skin Menu tidies the player's own items before it lists anything: a skin that fell
+	 * off (here through the netherite upgrade, past a diamond-only skin's Materials) reads Unapplied,
+	 * and its item loses the marker.
+	 */
+	@GameTest
+	public void openingTheMenuTidiesAndMakesASkinThatFellOffUnapplied(GameTestHelper helper) {
+		SkinFixtures fx = SkinFixtures.create().limited("diamond_blade_test", "sword", "[\"diamond\"]");
+		fx.reload();
+		SkinFixtures.Listening player = SkinFixtures.join(helper);
+		try {
+			player.getInventory().clearContent();
+			player.getInventory().setItem(0, new ItemStack(Items.DIAMOND_SWORD));
+			fx.skins.grant(player.nameAndId(), "diamond_blade_test");
+			fx.skins.apply(player, "diamond_blade_test", ItemLocation.hotbar(0));
+			// What the smithing table's netherite upgrade does to its base: the same components on a netherite sword.
+			ItemStack upgraded = player.getInventory().getItem(0).transmuteCopy(Items.NETHERITE_SWORD);
+			player.getInventory().setItem(0, upgraded);
+			assertThat(upgraded.has(SkinMarker.TYPE), "the upgrade lost the marker");
+
+			SkinMenu.open(player, fx.skins);
+			assertThat(lore(player, 0).contains("Unapplied"), "the skin that fell off reads " + lore(player, 0));
+			assertThat(!upgraded.has(SkinMarker.TYPE), "opening the Skin Menu didn't tidy the upgraded sword");
+		} finally {
+			player.closeContainer();
 			helper.getLevel().getServer().getPlayerList().remove(player);
 		}
 		helper.succeed();

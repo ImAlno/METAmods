@@ -5,21 +5,17 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
-import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.resources.Identifier;
-import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.players.NameAndId;
 import net.minecraft.world.Container;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.decoration.ItemFrame;
 import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.entity.npc.InventoryCarrier;
-import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.ItemInstance;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ItemStackTemplate;
 import net.minecraft.world.item.component.BundleContents;
 import net.minecraft.world.item.component.ContainerComponent;
 import net.minecraft.world.item.component.ItemContainerContents;
@@ -44,7 +40,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.stream.Stream;
 
@@ -67,9 +62,10 @@ import java.util.stream.Stream;
  * fits its skin (a netherite upgrade past the skin's Materials) is plain at
  * once wherever it is. A live item is <b>working</b> only while it's with its Owner (in their
  * inventory, worn, in their offhand, on their cursor or in their ender chest); anywhere else it's
- * Away, drawn plain, with no Perks. The server also clears a stale marker when it next touches the item
- * ({@link #revertStale}, driven by {@link StaleReverts}); a Dormant skin's markers are kept, so its
- * items come back when its definition does.
+ * Away, drawn plain, with no Perks. The server never searches for items: it clears stale markers
+ * only among the Owner's own items ({@link #tidy}), after a move, a remove or a revoke and as the
+ * Skin Menu opens, and vanilla re-sends what changed. Anywhere else a stale marker stays, never shown
+ * or used. A Dormant skin's markers are kept, so its items come back when its definition does.
  *
  * <p>Perks go through liveness too, and work only for the Owner: {@link #perks} reads them from the
  * live skin's definition each time, and {@link #updateLastingPerks} (every tick, for every player) keeps held and worn Perks in
@@ -89,8 +85,6 @@ public final class Skins {
 	private final OwnershipStore ownership;
 	private final Path world;
 	private @Nullable UUID worldStamp;
-	/** Bumped by every saved change and every reload: anything may have gone stale since. */
-	private final AtomicLong changes = new AtomicLong();
 
 	/** Every skin folder by id, loaded or Dormant; replaced whole by each reload. */
 	private volatile Map<String, Entry> skins = Map.of();
@@ -133,7 +127,8 @@ public final class Skins {
 	/**
 	 * Re-reads every skin folder and the settings file, then rebuilds the pack. A broken skin is
 	 * set aside as Dormant with its reason and never stops the others; each rejection and warning
-	 * is logged with its file. Pushing a changed pack to players is the caller's job.
+	 * is logged with its file. Pushing a changed pack to players, and sending them their items again
+	 * after a reload that {@linkplain ReloadReport#lookTakenAway() took a Look away}, is the caller's job.
 	 */
 	public synchronized ReloadReport reload() {
 		try {
@@ -179,12 +174,34 @@ public final class Skins {
 			builds.addFirst(pack);
 			while (builds.size() > KEEP_BUILDS) builds.removeLast();
 		}
+		boolean lookTakenAway = tookALookAway(skins, next);
 		skins = next;
 		dropKindChangedApplications();
-		changes.incrementAndGet();
 		MetacraftSkins.LOGGER.info("[{}] {} skin(s) loaded, {} Dormant; pack {}{}", MetacraftSkins.MOD_ID, loaded.size(), rejections.size(),
 				pack.sha1(), changed ? " (changed)" : "");
-		return new ReloadReport(List.copyOf(loaded), List.copyOf(rejections), List.copyOf(warnings), pack.sha1(), changed);
+		return new ReloadReport(List.copyOf(loaded), List.copyOf(rejections), List.copyOf(warnings), pack.sha1(), changed, lookTakenAway);
+	}
+
+	/**
+	 * Does going from {@code before} to {@code after} take a Look off items that showed one? A skin that
+	 * loaded before is Dormant or gone, has another Kind, or allows fewer Materials than it did. (A
+	 * reload that brings a Look back takes none away: items show it from their next re-send.)
+	 */
+	private static boolean tookALookAway(Map<String, Entry> before, Map<String, Entry> after) {
+		for (Entry was : before.values()) {
+			if (was.loaded().isEmpty()) continue;
+			Entry now = after.get(was.id());
+			if (now == null || now.loaded().isEmpty()) return true;
+			SkinFolder.Loaded old = was.loaded().get(), next = now.loaded().get();
+			if (old.kind() != next.kind() || narrowed(old.materials(), next.materials())) return true;
+		}
+		return false;
+	}
+
+	/** Does {@code after} allow less than {@code before}? No list allows every item, even one of no Material the mod knows; any list allows less. */
+	private static boolean narrowed(Optional<List<Material>> before, Optional<List<Material>> after) {
+		if (after.isEmpty()) return false;
+		return before.isEmpty() || !after.get().containsAll(before.get());
 	}
 
 	/**
@@ -203,7 +220,8 @@ public final class Skins {
 	/**
 	 * Deletes the player's record of the skin, online or not, Dormant skins included, and writes
 	 * their file before returning. An item still carrying it no longer matches any record, so it's
-	 * stale. Refused if they don't own it or their file is damaged. Telling an online player is the caller's job.
+	 * stale. Refused if they don't own it or their file is damaged. Telling an online player, and
+	 * tidying their items ({@link #tidy}), is the caller's job.
 	 */
 	public synchronized OwnershipChange revoke(NameAndId profile, String skinId) {
 		return changing(profile.id(), record -> !record.skins().containsKey(skinId) ? OwnershipChange.NOT_OWNED
@@ -221,11 +239,12 @@ public final class Skins {
 	/**
 	 * Puts the player's skin on the item at {@code where}, writing their file before the item
 	 * changes. The new application supersedes every earlier one, so any other item carrying the
-	 * skin is plain from now on. A skin already on the item (theirs or another player's, live or
-	 * Dormant) is replaced, and becomes Unapplied for its Owner, who keeps owning it; if that Owner's
-	 * file is damaged, it's left alone (and logged). Refused, changing nothing,
-	 * if the skin is unknown or Dormant, they don't own it, nothing that {@linkplain #fits fits} is there
-	 * (Material included), it already carries this application, or their file is damaged or can't be saved.
+	 * skin is plain from now on, and the player's own items are tidied ({@link #tidy}). A skin
+	 * already on the item (theirs or another player's, live or Dormant) is replaced, and becomes
+	 * Unapplied for its Owner, who keeps owning it; if that Owner's file is damaged, it's left alone
+	 * (and logged). Refused, changing nothing, if the skin is unknown or Dormant, they don't own it,
+	 * nothing that {@linkplain #fits fits} is there (Material included), it already carries this
+	 * application, or their file is damaged or can't be saved.
 	 */
 	public synchronized ApplyResult apply(ServerPlayer player, String skinId, ItemLocation where) {
 		Entry skin = skins.get(skinId);
@@ -253,6 +272,7 @@ public final class Skins {
 		if (save(next) != OwnershipChange.DONE) return ApplyResult.refused(ApplyResult.Outcome.SAVE_FAILED);
 		if (current.isPresent() && !replacingTheirOwn) unapplyReplaced(current.get().marker());
 		item.set(SkinMarker.TYPE, new SkinMarker(skinId, player.getUUID(), application));
+		tidy(player);   // the skin's old item, if they have it
 		return new ApplyResult(ApplyResult.Outcome.APPLIED, current.map(Displaced::name));
 	}
 
@@ -308,6 +328,7 @@ public final class Skins {
 	 * Takes the Owner's skin off its item, wherever that item is, without anyone holding it: the
 	 * skin is Unapplied and the item it was on is plain from now on. Only the Owner can; refused if
 	 * they don't own it, it's on no item in this world, or their file is damaged or can't be saved.
+	 * Tidying the Owner's items ({@link #tidy}) is the caller's job.
 	 */
 	public synchronized OwnershipChange remove(NameAndId profile, String skinId) {
 		return changing(profile.id(), record -> {
@@ -437,12 +458,12 @@ public final class Skins {
 		NO_LONGER_FITS
 	}
 
-	private Standing standing(ItemStack stack, SkinMarker marker) {
+	private Standing standing(ItemInstance item, SkinMarker marker) {
 		Entry skin = skins.get(marker.skin());
 		if (skin == null || skin.loaded().isEmpty()) return Standing.ON_HOLD;
 		if (!(ownership.read(marker.owner()) instanceof OwnershipStore.Readable(var record))) return Standing.ON_HOLD;
 		if (!isCurrent(record, marker)) return Standing.STALE;
-		return fits(skin.loaded().get(), stack) ? Standing.LIVE : Standing.NO_LONGER_FITS;
+		return fits(skin.loaded().get(), item) ? Standing.LIVE : Standing.NO_LONGER_FITS;
 	}
 
 	/**
@@ -450,7 +471,7 @@ public final class Skins {
 	 * Materials, made of one of them; an item of no Material the mod knows (another mod's) fits only
 	 * a skin that isn't limited.
 	 */
-	private static boolean fits(SkinFolder.Loaded skin, ItemStack item) {
+	private static boolean fits(SkinFolder.Loaded skin, ItemInstance item) {
 		if (!skin.kind().fits(item)) return false;
 		return skin.materials().map(allowed -> Material.of(item).filter(allowed::contains).isPresent()).orElse(true);
 	}
@@ -486,18 +507,32 @@ public final class Skins {
 	}
 
 	/**
-	 * The server touching an item: if it carries a stale marker, the marker is cleared, so the item
-	 * is plain for good. A Dormant skin's marker (or one whose Owner's file is damaged) is kept, and
-	 * so is a live one. The items inside a shulker box or bundle item are touched too. An item that
-	 * carries a skin's current application but no longer fits it loses the skin, which becomes
-	 * Unapplied for its Owner. Returns how many items it reverted. Server thread only.
+	 * Tidies the Owner's own items: their inventory (hotbar, worn armour and offhand included), ender
+	 * chest and cursor, and the shulker boxes and bundles among them. A stale marker is cleared, so the
+	 * item is plain for good; an item that carries a skin's current application but no longer fits it
+	 * loses the skin, which becomes Unapplied for its Owner. A Dormant skin's marker (or one whose
+	 * Owner's file is damaged) is kept, and so is a live one. Nothing else is ever searched: an item
+	 * anywhere else keeps a stale marker, which is never shown or used. Vanilla then re-sends whatever
+	 * changed to the Owner and to anyone who sees them. Called by {@link #apply} itself, by the callers
+	 * of {@link #remove} and {@link #revoke} while the Owner is online, and as the Skin Menu opens.
+	 * Returns how many items it reverted. Server thread only.
 	 */
-	public synchronized int revertStale(ItemStack stack) {
+	public synchronized int tidy(ServerPlayer owner) {
+		return tidy(owner.getInventory()) + tidy(owner.getEnderChestInventory()) + tidy(owner.containerMenu.getCarried());
+	}
+
+	private int tidy(Container container) {
+		int reverted = 0;
+		for (int slot = 0; slot < container.getContainerSize(); slot++) reverted += tidy(container.getItem(slot));
+		return reverted;
+	}
+
+	private int tidy(ItemStack stack) {
 		int reverted = 0;
 		SkinMarker marker = stack.get(SkinMarker.TYPE);
 		if (marker != null) {
 			Standing standing = standing(stack, marker);
-			if (standing == Standing.STALE || standing == Standing.NO_LONGER_FITS) {
+			if (comesOff(standing)) {
 				stack.remove(SkinMarker.TYPE);
 				reverted++;
 				if (standing == Standing.NO_LONGER_FITS && ownership.read(marker.owner()) instanceof OwnershipStore.Readable(var record)) {
@@ -506,74 +541,40 @@ public final class Skins {
 			}
 		}
 		ItemContainerContents box = stack.get(DataComponents.CONTAINER);
-		if (box != null) reverted += revertInside(stack, DataComponents.CONTAINER, box);
+		if (box != null) reverted += tidyInside(stack, DataComponents.CONTAINER, box, box.nonEmptyItems());
 		BundleContents bundle = stack.get(DataComponents.BUNDLE_CONTENTS);
-		if (bundle != null) reverted += revertInside(stack, DataComponents.BUNDLE_CONTENTS, bundle);
+		if (bundle != null) reverted += tidyInside(stack, DataComponents.BUNDLE_CONTENTS, bundle, bundle.items());
 		return reverted;
 	}
 
-	/** The items inside a shulker box or bundle item are copies; any reverted one is written back. */
-	private <T extends ContainerComponent<T>> int revertInside(ItemStack holder, DataComponentType<T> type, T contents) {
+	/** A marker that tidying clears: stale, or on an item that no longer fits its skin. */
+	private static boolean comesOff(Standing standing) {
+		return standing == Standing.STALE || standing == Standing.NO_LONGER_FITS;
+	}
+
+	/**
+	 * The items inside a shulker box or bundle item, read without copying ({@code items}); only if one
+	 * of them, or something inside it, has something to change are they copied, tidied and written back.
+	 */
+	private <T extends ContainerComponent<T>> int tidyInside(ItemStack holder, DataComponentType<T> type, T contents, Iterable<ItemStackTemplate> items) {
+		if (!needsTidying(items)) return 0;
 		List<ItemStack> copies = contents.itemCopies().toList();
-		if (copies.stream().noneMatch(Skins::mayHoldAMarker)) return 0;
 		int reverted = 0;
-		for (ItemStack copy : copies) reverted += revertStale(copy);
-		if (reverted > 0) holder.set(type, contents.copyWithContents(copies.stream()));
+		for (ItemStack copy : copies) reverted += tidy(copy);
+		holder.set(type, contents.copyWithContents(copies.stream()));
 		return reverted;
 	}
 
-	private static boolean mayHoldAMarker(ItemStack stack) {
-		return stack.has(SkinMarker.TYPE) || stack.has(DataComponents.CONTAINER) || stack.has(DataComponents.BUNDLE_CONTENTS);
-	}
-
-	/** {@link #revertStale(ItemStack)} for every item in a container: a chest, an ender chest, a minecart's. */
-	public synchronized int revertStale(Container container) {
-		int reverted = 0;
-		for (int slot = 0; slot < container.getContainerSize(); slot++) reverted += revertStale(container.getItem(slot));
-		return reverted;
-	}
-
-	/**
-	 * {@link #revertStale(ItemStack)} for whatever an entity holds. A player: their inventory,
-	 * worn armour, offhand, ender chest, the menu they have open and the item on their cursor. A
-	 * dropped item, an item frame's item, a mob's or armour stand's equipment, a minecart's or
-	 * villager's inventory. Server thread only.
-	 */
-	public synchronized int revertStale(Entity entity) {
-		int reverted = 0;
-		if (entity instanceof ServerPlayer player) {
-			reverted += revertStale(player.getInventory());
-			reverted += revertStale(player.getEnderChestInventory());
-			for (Slot slot : player.containerMenu.slots) reverted += revertStale(slot.getItem());
-			reverted += revertStale(player.containerMenu.getCarried());
-			return reverted;
+	private boolean needsTidying(Iterable<ItemStackTemplate> items) {
+		for (ItemStackTemplate item : items) {
+			SkinMarker marker = item.get(SkinMarker.TYPE);
+			if (marker != null && comesOff(standing(item, marker))) return true;
+			ItemContainerContents box = item.get(DataComponents.CONTAINER);
+			if (box != null && needsTidying(box.nonEmptyItems())) return true;
+			BundleContents bundle = item.get(DataComponents.BUNDLE_CONTENTS);
+			if (bundle != null && needsTidying(bundle.items())) return true;
 		}
-		if (entity instanceof ItemEntity dropped) reverted += sentAgain(entity, revertStale(dropped.getItem()));
-		if (entity instanceof ItemFrame frame) reverted += sentAgain(entity, revertStale(frame.getItem()));
-		// Vanilla sends a changed piece of equipment to those who see it by itself.
-		if (entity instanceof LivingEntity living) for (EquipmentSlot slot : EquipmentSlot.VALUES) reverted += revertStale(living.getItemBySlot(slot));
-		if (entity instanceof Container container) reverted += revertStale(container);
-		if (entity instanceof InventoryCarrier carrier) reverted += revertStale(carrier.getInventory());
-		return reverted;
-	}
-
-	/**
-	 * A dropped item or a framed one, changed in place, isn't sent again by itself: its item is
-	 * re-sent to everyone who can see it, so their clients drop the Look too.
-	 */
-	private static int sentAgain(Entity entity, int reverted) {
-		if (reverted == 0 || !(entity.level() instanceof ServerLevel level)) return reverted;
-		List<SynchedEntityData.DataValue<?>> values = entity.getEntityData().getNonDefaultValues();
-		if (values == null) return reverted;
-		List<SynchedEntityData.DataValue<?>> items = values.stream().filter(v -> v.value() instanceof ItemStack).toList();
-		if (!items.isEmpty()) level.getChunkSource().sendToTrackingPlayers(entity, new ClientboundSetEntityDataPacket(entity.getId(), items));
-		return reverted;
-	}
-
-	/** A player joined: their name is kept ({@link #seen}), and whatever they carry is touched, so a skin moved while they were away is gone. */
-	public synchronized void joined(ServerPlayer player) {
-		seen(player.nameAndId());
-		revertStale(player);
+		return false;
 	}
 
 	/**
@@ -726,7 +727,6 @@ public final class Skins {
 	private OwnershipChange save(OwnershipStore.PlayerRecord record) {
 		try {
 			ownership.save(record);
-			changes.incrementAndGet();
 			return OwnershipChange.DONE;
 		} catch (IOException | RuntimeException e) {
 			MetacraftSkins.LOGGER.error("[{}] could not save {}; the change was not made", MetacraftSkins.MOD_ID, ownership.file(record.uuid()), e);
@@ -735,14 +735,6 @@ public final class Skins {
 	}
 
 	// ---- queries
-
-	/**
-	 * How many changes there have been: saved ownership changes and reloads. Once it moves, items
-	 * anywhere may have gone stale, so the server touches what it can reach ({@link StaleReverts}).
-	 */
-	public long changes() {
-		return changes.get();
-	}
 
 	/** What the player owns, online or not, with each skin's claim time and state. */
 	public synchronized PlayerSkins ownedSkins(UUID player) {

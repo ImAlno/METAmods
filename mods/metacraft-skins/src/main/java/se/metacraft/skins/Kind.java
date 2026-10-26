@@ -5,6 +5,7 @@ import net.minecraft.tags.ItemTags;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemInstance;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.equipment.Equippable;
@@ -72,12 +73,15 @@ public enum Kind {
 		return icon;
 	}
 
-	/** Is this item of this Kind? Read off the real (server) item, never a stack that stacks. */
-	public boolean fits(ItemStack stack) {
-		if (stack.isEmpty() || stack.isStackable()) return false;
-		if (tag != null) return stack.is(tag);
-		Equippable equippable = stack.get(DataComponents.EQUIPPABLE);
-		return stack.has(DataComponents.GLIDER) && equippable != null && equippable.slot() == EquipmentSlot.CHEST;
+	/**
+	 * Is this item (a stack, or one held inside a shulker box or bundle) of this Kind? Read off the
+	 * real (server) item, never a stack that stacks.
+	 */
+	public boolean fits(ItemInstance item) {
+		if (item.count() <= 0 || item.getMaxStackSize() > 1) return false;
+		if (tag != null) return item.is(tag);
+		Equippable equippable = item.get(DataComponents.EQUIPPABLE);
+		return item.get(DataComponents.GLIDER) != null && equippable != null && equippable.slot() == EquipmentSlot.CHEST;
 	}
 
 	/** The Kind an item belongs to, if any. */

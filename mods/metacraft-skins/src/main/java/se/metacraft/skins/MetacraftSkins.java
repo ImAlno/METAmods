@@ -53,7 +53,7 @@ public final class MetacraftSkins implements ModInitializer {
 		UseEntityCallback.EVENT.register((player, level, hand, entity, hit) -> rightClick(player, hand));
 		ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
 			Skins current = skins;
-			if (current != null) current.joined(handler.player);
+			if (current != null) current.seen(handler.player.nameAndId());
 		});
 		// Held and worn Perks follow what each player holds and wears, tick by tick.
 		ServerTickEvents.END_SERVER_TICK.register(server -> {
@@ -96,8 +96,6 @@ public final class MetacraftSkins implements ModInitializer {
 			skins = loaded;
 		});
 		ServerLifecycleEvents.SERVER_STOPPED.register(server -> skins = null);
-		// Stale items are cleared as the server next touches them.
-		StaleReverts.init(MetacraftSkins::skins);
 		PackDelivery.init(MetacraftSkins::skins);
 		SkinsCommands.init(MetacraftSkins::skins);
 	}

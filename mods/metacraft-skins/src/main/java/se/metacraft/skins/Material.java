@@ -1,7 +1,7 @@
 package se.metacraft.skins;
 
 import net.minecraft.world.item.Item;
-import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ItemInstance;
 import net.minecraft.world.item.Items;
 
 import java.util.Arrays;
@@ -89,7 +89,7 @@ public enum Material {
 	}
 
 	/** The item's Material, if it's one of the table's vanilla items; empty for any other (unrecognised). */
-	public static Optional<Material> of(ItemStack stack) {
-		return Optional.ofNullable(TABLE.get(stack.getItem()));
+	public static Optional<Material> of(ItemInstance item) {
+		return Optional.ofNullable(TABLE.get(item.typeHolder().value()));
 	}
 }

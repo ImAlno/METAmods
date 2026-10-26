@@ -8,7 +8,6 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import se.metacraft.skins.ItemLocation;
 import se.metacraft.skins.MetacraftSkins;
-import se.metacraft.skins.OwnershipChange;
 import se.metacraft.skins.SkinMarker;
 import se.metacraft.skins.SkinToken;
 import se.metacraft.skins.Skins;
@@ -25,13 +24,16 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundAddEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundContainerSetContentPacket;
 import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
 import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
+import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
 import net.minecraft.network.protocol.game.ClientboundSoundPacket;
 import net.minecraft.network.protocol.game.ClientboundSwingAnimationPacket;
 import net.minecraft.network.protocol.game.GameProtocols;
+import net.minecraft.network.protocol.game.ServerboundChunkBatchReceivedPacket;
 import net.minecraft.network.protocol.game.ServerboundContainerClosePacket;
 import net.minecraft.network.protocol.game.ServerboundInteractPacket;
 import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
@@ -48,13 +50,11 @@ import net.minecraft.world.entity.EntityTypes;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.animal.pig.Pig;
 import net.minecraft.world.entity.decoration.ItemFrame;
-import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.ItemLore;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
@@ -81,7 +81,8 @@ import static se.metacraft.skins.gametest.SkinFixtures.assertThat;
  * {@code revoke} and {@code info} work on online and offline players, tell an online one, and
  * tab-complete skin ids; {@code /skins} opens the Skin Menu; a Skinned Item, a vanilla diamond
  * sword, reaches players through real packet encoders wearing its Look while it's with its Owner; and
- * {@code /skins give} hands out Skin Tokens, which a real right-click claims; and the server keeps
+ * {@code /skins give} hands out Skin Tokens, which a real right-click claims; a reload that takes a
+ * Look away re-sends players' items, and only such a reload does; and the server keeps
  * a worn Perk up on its own, ending it soon after the item comes off; and a real melee hit, kill,
  * block break and hurt fire their event Perks. One test, because it swaps
  * the server's Skins. The rules behind it are SkinDefinitionTests', SkinsPackTests',
@@ -98,7 +99,7 @@ public final class SkinsCommandTests {
 		Skins previous = MetacraftSkins.use(fx.skins);
 		List<CompletableFuture<HttpResponse<byte[]>>> downloads = new ArrayList<>();
 		SkinsPack pack;
-		StaleItems stale;
+		Redrawn redrawn;
 		WornPerk worn;
 		try {
 			List<String> reload = run(server, LevelBasedPermissionSet.ADMIN, "skins reload");
@@ -126,7 +127,7 @@ public final class SkinsCommandTests {
 			assertThat(fx.skins.allSkins().size() == 2, "a gamemaster reloaded the skins");
 			List<String> refused = run(server, LevelBasedPermissionSet.MODERATOR, "skins list");
 			assertThat(refused.stream().noneMatch(l -> l.contains("candy_cane_test")), "a moderator got the list: " + refused);
-			stale = new StaleItems(helper, fx);
+			redrawn = new Redrawn(helper, fx);
 			worn = new WornPerk(helper, fx);
 			realEventsFireTheirPerks(helper, fx);
 
@@ -139,83 +140,97 @@ public final class SkinsCommandTests {
 			throw e;
 		}
 		SkinsPack built = pack;
-		StaleItems removed = stale;
+		Redrawn reloads = redrawn;
 		WornPerk boots = worn;
 		helper.startSequence()
-				.thenWaitUntil(removed::revertedOnTheirOwn)
-				.thenExecute(removed::openTheChestAndDropOne)
-				.thenWaitUntil(removed::revertedInTheChest)
-				.thenExecute(removed::leave)
-				.thenWaitUntil(boots::fast)
-				.thenExecute(boots::takeOff)
-				.thenExecuteAfter(20, boots::slowAgain)
 				.thenWaitUntil(() -> assertThat(downloads.stream().allMatch(CompletableFuture::isDone), "still downloading"))
 				.thenExecute(() -> {
-					MetacraftSkins.use(previous);
 					HttpResponse<byte[]> response = downloads.getFirst().join();
 					assertThat(response.statusCode() == 200, "the pack server answered " + response.statusCode());
 					assertThat(Arrays.equals(response.body(), built.zip()), "the download is not the pack that was built");
 					assertThat(downloads.getLast().join().statusCode() != 200, "the pack server served a pack that was never built");
 				})
+				// Only once the downloads are served: each reload here builds a pack, and only the last few stay downloadable.
+				.thenExecute(reloads::join)
+				.thenWaitUntil(reloads::viewerSeesTheOwner)
+				.thenExecute(reloads::reloadsResendOnlyWhenALookIsTakenAway)
+				.thenExecute(reloads::leave)
+				.thenWaitUntil(boots::fast)
+				.thenExecute(boots::takeOff)
+				.thenExecuteAfter(20, boots::slowAgain)
+				.thenExecute(() -> MetacraftSkins.use(previous))
 				.thenSucceed();
 	}
 
 	/**
-	 * Stale items revert with nobody asking: after a remove, the server's next ticks clear the
-	 * marker on an online player's sword, a dropped copy and an ender chest copy; a chest copy goes
-	 * when a player opens the chest; a stale copy dropped later goes as it enters the world.
+	 * A reload that takes a Look away (here a skin going Dormant) re-sends every online player's own
+	 * items, and their equipment to whoever sees them, tagged with the wearer so it's drawn as being
+	 * with them; a reload that takes none away (the skin fixed again) re-sends neither.
 	 */
-	private static final class StaleItems {
+	private static final class Redrawn {
 		private final GameTestHelper helper;
-		private final SkinFixtures.Listening player;
-		private final ItemEntity dropped;
-		private final ItemStack spare;
-		private final ChestBlockEntity chest;
+		private final SkinFixtures fx;
+		private SkinFixtures.Listening owner;
+		private SkinFixtures.Listening viewer;
+		/** Does the viewer's client have the Owner now? They pair at the join spawn, and part as each arrives elsewhere. */
+		private boolean seen;
 
-		StaleItems(GameTestHelper helper, SkinFixtures fx) {
+		Redrawn(GameTestHelper helper, SkinFixtures fx) {
 			this.helper = helper;
-			player = SkinFixtures.join(helper);
-			player.getInventory().clearContent();
-			player.getInventory().setItem(0, new ItemStack(Items.DIAMOND_SWORD));
-			fx.skins.grant(player.nameAndId(), "candy_cane_test");
-			assertThat(fx.skins.apply(player, "candy_cane_test", ItemLocation.hotbar(0)).applied(), "the sword wasn't skinned");
-			ItemStack sword = player.getInventory().getItem(0);
-			player.getEnderChestInventory().setItem(0, sword.copy());
-			spare = sword.copy();
-			Vec3 at = helper.absoluteVec(new Vec3(2.5, 2, 2.5));
-			dropped = new ItemEntity(helper.getLevel(), at.x, at.y, at.z, sword.copy());
-			dropped.setNeverPickUp();
-			helper.getLevel().addFreshEntity(dropped);
-			BlockPos pos = new BlockPos(4, 1, 4);
-			helper.setBlock(pos, Blocks.CHEST);
-			chest = helper.getBlockEntity(pos, ChestBlockEntity.class);
-			assertThat(fx.skins.remove(player.nameAndId(), "candy_cane_test") == OwnershipChange.DONE, "the remove was refused");
-			assertThat(player.getInventory().getItem(0).has(SkinMarker.TYPE), "the marker went before the server touched the sword");
+			this.fx = fx;
 		}
 
-		void revertedOnTheirOwn() {
-			assertThat(!player.getInventory().getItem(0).has(SkinMarker.TYPE), "the online player's stale sword wasn't reverted");
-			assertThat(!player.getEnderChestInventory().getItem(0).has(SkinMarker.TYPE), "the ender chest's stale copy wasn't reverted");
-			assertThat(!dropped.getItem().has(SkinMarker.TYPE), "the dropped stale copy wasn't reverted");
+		/** The Owner, wearing a skinned helmet, and the viewer join and stand side by side. */
+		void join() {
+			fx.lookOnly("redraw_cap_test", "helmet");
+			fx.skins.reload();
+			owner = SkinFixtures.join(helper);
+			viewer = SkinFixtures.join(helper);
+			Vec3 at = helper.absoluteVec(new Vec3(2.5, 1, 2.5));
+			owner.arrive(at);
+			viewer.arrive(at.add(1, 0, 1));
+			owner.getInventory().clearContent();
+			owner.setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.IRON_HELMET));
+			fx.skins.grant(owner.nameAndId(), "redraw_cap_test");
+			assertThat(fx.skins.apply(owner, "redraw_cap_test", ItemLocation.worn(EquipmentSlot.HEAD)).applied(), "the cap wasn't applied");
 		}
 
-		void openTheChestAndDropOne() {
-			chest.setItem(0, spare.copy());
-			player.openMenu(chest);
-			Vec3 at = helper.absoluteVec(new Vec3(1.5, 2, 1.5));
-			ItemEntity late = new ItemEntity(helper.getLevel(), at.x, at.y, at.z, spare.copy());
-			helper.getLevel().addFreshEntity(late);
-			assertThat(!late.getItem().has(SkinMarker.TYPE), "a stale item entering the world kept its marker");
+		/** As clients do: report where they are, and take the chunks they're sent, until the viewer sees the Owner. */
+		void viewerSeesTheOwner() {
+			for (ServerPlayer player : List.of(owner, viewer)) {
+				helper.getLevel().getChunkSource().move(player);
+				player.connection.handleChunkBatchReceived(new ServerboundChunkBatchReceivedPacket(64));
+			}
+			for (Object packet : viewer.sent(Object.class)) {
+				if (packet instanceof ClientboundAddEntityPacket add && add.getId() == owner.getId()) seen = true;
+				if (packet instanceof ClientboundRemoveEntitiesPacket remove && remove.entityIds().contains(owner.getId())) seen = false;
+			}
+			assertThat(seen, "the viewer doesn't see the Owner yet");
 		}
 
-		void revertedInTheChest() {
-			assertThat(!chest.getItem(0).has(SkinMarker.TYPE), "opening the chest didn't revert its stale copy");
+		void reloadsResendOnlyWhenALookIsTakenAway() {
+			MinecraftServer server = helper.getLevel().getServer();
+			owner.sent(Object.class);
+			viewer.sent(Object.class);
+			fx.file("redraw_cap_test", "redraw_cap_test.json", "{ broken");
+			run(server, LevelBasedPermissionSet.ADMIN, "skins reload");
+			assertThat(owner.sent(ClientboundContainerSetContentPacket.class).stream().anyMatch(p -> p.containerId() == 0),
+					"a reload that made the cap Dormant didn't re-send the Owner's inventory");
+			List<ClientboundSetEquipmentPacket> worn = viewer.sent(ClientboundSetEquipmentPacket.class).stream().filter(p -> p.getEntity() == owner.getId()).toList();
+			assertThat(worn.size() == 1 && PolymerEntityUtils.getEntityContext(worn.getFirst()) == owner
+					&& worn.getFirst().getSlots().stream().anyMatch(s -> s.getFirst() == EquipmentSlot.HEAD && s.getSecond().is(Items.IRON_HELMET)),
+					"a reload that made the cap Dormant re-sent the Owner's equipment as " + worn);
+
+			fx.lookOnly("redraw_cap_test", "helmet");
+			run(server, LevelBasedPermissionSet.ADMIN, "skins reload");
+			assertThat(fx.skins.liveSkin(owner.getItemBySlot(EquipmentSlot.HEAD)).isPresent(), "the fixed cap isn't live");
+			assertThat(owner.sent(ClientboundContainerSetContentPacket.class).isEmpty() && viewer.sent(ClientboundSetEquipmentPacket.class).isEmpty(),
+					"a reload that took no Look away re-sent items");
 		}
 
 		void leave() {
-			player.closeContainer();
-			helper.getLevel().getServer().getPlayerList().remove(player);
-			dropped.discard();
+			helper.getLevel().getServer().getPlayerList().remove(owner);
+			helper.getLevel().getServer().getPlayerList().remove(viewer);
 		}
 	}
 
@@ -325,8 +340,12 @@ public final class SkinsCommandTests {
 			run(server, LevelBasedPermissionSet.ADMIN, "skins grant " + name + " candy_cane_test");
 			assertThat(fx.skins.ownedSkins(online.getUUID()).owns("candy_cane_test"), "grant didn't grant an online player");
 			assertThat(online.heard.stream().anyMatch(l -> l.contains("You now own candy_cane_test skin")), "the online player wasn't told of the grant: " + online.heard);
+			online.getInventory().clearContent();
+			online.getInventory().setItem(0, new ItemStack(Items.DIAMOND_SWORD));
+			fx.skins.apply(online, "candy_cane_test", ItemLocation.hotbar(0));
 			run(server, LevelBasedPermissionSet.ADMIN, "skins revoke " + name + " candy_cane_test");
 			assertThat(!fx.skins.ownedSkins(online.getUUID()).owns("candy_cane_test"), "revoke didn't revoke from an online player");
+			assertThat(!online.getInventory().getItem(0).has(SkinMarker.TYPE), "revoking from an online player didn't tidy their sword");
 			assertThat(online.heard.stream().anyMatch(l -> l.contains("candy_cane_test skin was removed from your skins by an admin")),
 					"the online player wasn't told of the revoke: " + online.heard);
 		} finally {

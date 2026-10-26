@@ -124,9 +124,10 @@ An item's Material is read off the item itself: one of the vanilla items above. 
 Kind (another mod's ruby sword) has no Material the mod knows, so it fits only skins with no
 `materials`. Listing every Material of the Kind is allowed, but it isn't the same as leaving the field
 out: the full list doesn't fit such an item. Materials aren't part of the Look, so changing them never
-changes the pack. Narrowing the list takes the skin off only the items that no longer fit, each when
-the server next touches it, and the skin goes Unapplied for its Owner; items that still fit keep it.
-Widening the list again before an item is touched leaves it as it was. (Changing `kind` is different:
+changes the pack. Narrowing the list makes the items that no longer fit plain at once, and the skin
+comes off each one, going Unapplied for its Owner, the next time the server tidies that Owner's items
+(see [How items behave](#how-items-behave)); items that still fit keep it. Widening the list again
+before an item is tidied leaves it as it was. (Changing `kind` is different:
 see [Dormant skins and permanent ids](#dormant-skins-and-permanent-ids).)
 
 Players read a limited skin's Materials as vanilla's item names do, in the table's order whatever
@@ -288,7 +289,10 @@ packs never pushes a resource pack by surprise. `/skins reload`:
 2. rebuilds the skins pack;
 3. if the pack changed, sends it to everyone online (each gets a short loading screen), and otherwise
    sends nothing;
-4. reports to you: how many skins loaded, how many are Dormant and why, every model warning, and
+4. if it took a Look away (a skin went Dormant or missing, its `kind` changed, or its `materials` list
+   narrowed), sends everyone online their items and worn equipment again, so the Look leaves every
+   screen at once; any other reload sends no items;
+5. reports to you: how many skins loaded, how many are Dormant and why, every model warning, and
    whether the pack changed (with the start of its SHA-1).
 
 The pack is built the same way every time, so the same skins give the same SHA-1. Only Looks are in
@@ -427,11 +431,14 @@ If a player already has skins on the new server, merge the two files by hand fir
 Rules that answer most support questions:
 
 - **One item at a time.** Applying a skin to another item, removing it, revoking it, or another skin
-  overwriting it makes every other item carrying it plain at once, wherever it is: chests, ender chests,
-  shulker boxes, bundles, item frames, the ground, other players. The marker is cleared the next time the
-  server touches the item: an online player's items within a tick, dropped and framed items in loaded
-  chunks, a container when it's opened, an offline player's items when they join, anything in a chunk as
-  it loads. A container nobody opens keeps a stale marker, which is harmless: it's never shown or used.
+  overwriting it makes the old item plain for good, wherever it is: chests, ender chests, shulker boxes,
+  bundles, item frames, the ground, other players. The server never searches for old items. It tidies
+  only the Owner's own items (inventory, worn armour, offhand, cursor, ender chest, and the shulker boxes
+  and bundles among them): at once after the change if they're online, and whenever they open the Skin
+  Menu. The tidy clears the old item's marker, and the game sends the changed slots to the Owner and to
+  everyone who sees them. A copy anywhere else keeps its stale marker, which is harmless: it's never
+  shown or used, and it was already drawn plain there, being Away. An offline Owner's old item is drawn
+  plain from the moment they join.
 - **Only with its Owner.** A Skinned Item shows its Look and gives Perks only while it's with its
   Owner: in their inventory or hotbar, worn, in their offhand, on their cursor or in their ender chest.
   Everyone who sees the Owner sees the hat on their head and the sword in their hand. Anywhere else the
@@ -450,7 +457,8 @@ Rules that answer most support questions:
   smithing table's netherite upgrade keeps it only if the skin allows netherite (it has no `materials`,
   or lists `netherite`): a diamond-only skin falls off the upgraded item. So does a smithing result of
   another Kind (only possible with data packs). A skin that falls off is plain at once and goes
-  Unapplied for its Owner when the server next touches the item. **Crafting-grid repair** makes a new item, so the skin is lost;
+  Unapplied for its Owner the next time the server tidies their items (opening the Skin Menu does).
+  **Crafting-grid repair** makes a new item, so the skin is lost;
   the Owner applies it again.
 - **Tooltips.** A Skinned Item shows, after its own lines, "Skin: <Skin>" (gold), the Perk lines, and
   "Owned by <player>" (the last known name of an offline Owner). An Away item shows one gray line in
@@ -471,5 +479,4 @@ All the rules live in one class, `Skins`, which reads and writes only under the 
 game test points it at a temporary folder with fixture skins. Commands (`command/`), menus (`ui/`), the
 token item, the pack delivery (`pack/`, `compat/resource_packs/`) and the event listeners (`MetacraftSkins`) are thin adapters around it. The game tests
 are in `gametest/`, registered under `fabric-gametest` in `fabric.mod.json`. Test skin ids end in `_test`, so they never
-match a skin in the test server's own skins folder: the server's stale sweep would clear a test item
-carrying one.
+collide with the test server's own skins (the example skins it installs on its first start).

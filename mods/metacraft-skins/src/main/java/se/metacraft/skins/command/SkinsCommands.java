@@ -6,6 +6,8 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
+import com.mojang.datafixers.util.Pair;
+import eu.pb4.polymer.core.api.entity.PolymerEntityUtils;
 import se.metacraft.skins.Material;
 import se.metacraft.skins.MetacraftSkins;
 import se.metacraft.skins.OwnedSkin;
@@ -27,13 +29,18 @@ import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.commands.arguments.GameProfileArgument;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
 import net.minecraft.resources.Identifier;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.permissions.PermissionLevel;
 import net.minecraft.server.players.NameAndId;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.ItemStack;
 
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.function.Predicate;
@@ -48,7 +55,8 @@ import java.util.stream.Collectors;
  *   <li>{@code /skins} alone ({@code metacraft-skins:menu}, everyone): opens the player's Skin Menu;</li>
  *   <li>{@code list} ({@code metacraft-skins:list}, gamemasters): every skin, its Kind and any Materials it's limited to, and why a Dormant one failed;</li>
  *   <li>{@code reload} ({@code metacraft-skins:reload}, admins): re-read the skins and settings and rebuild the pack;
- *       a changed pack is pushed to everyone online. Vanilla {@code /reload} never touches skins;</li>
+ *       a changed pack is pushed to everyone online, and a reload that took a Look away sends everyone online their items
+ *       again. Vanilla {@code /reload} never touches skins;</li>
  *   <li>{@code give <targets> <skin> [count]} ({@code metacraft-skins:give}, gamemasters): Skin Tokens for online players,
  *       1 to 64 of them; what doesn't fit drops at the player's feet;</li>
  *   <li>{@code info <player>} ({@code metacraft-skins:info}, gamemasters): what a player owns, with claim dates and states;</li>
@@ -208,6 +216,7 @@ public final class SkinsCommands {
 		String name = skins.skin(id).map(SkinSummary::displayName).orElse(id);
 		ServerPlayer online = ctx.getSource().getServer().getPlayerList().getPlayer(player.id());
 		if (online != null) {
+			skins.tidy(online);   // the item it was on, if they have it
 			Feedback.revokedByAdmin(online, name);
 			SkinToken.resend(online);
 		}
@@ -222,10 +231,32 @@ public final class SkinsCommands {
 		return 0;
 	}
 
+	/**
+	 * After a reload that took a Look away: every online player is sent their own items again (their
+	 * inventory, and any menu they have open), and their equipment goes again to everyone who sees
+	 * them, tagged with the wearer so the drawing check draws it as being with them. Clients then drop
+	 * the Look that's gone.
+	 */
+	private static void redrawEveryone(MinecraftServer server) {
+		for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+			player.containerMenu.sendAllDataToRemote();
+			if (player.containerMenu != player.inventoryMenu) player.inventoryMenu.sendAllDataToRemote();
+			List<Pair<EquipmentSlot, ItemStack>> worn = new ArrayList<>();
+			for (EquipmentSlot slot : EquipmentSlot.VALUES) {
+				ItemStack item = player.getItemBySlot(slot);
+				if (!item.isEmpty()) worn.add(Pair.of(slot, item.copy()));
+			}
+			if (worn.isEmpty()) continue;
+			player.level().getChunkSource().sendToTrackingPlayers(player,
+					PolymerEntityUtils.setEntityContext(new ClientboundSetEquipmentPacket(player.getId(), worn), player));
+		}
+	}
+
 	private static int reload(CommandContext<CommandSourceStack> ctx, Skins skins) {
 		CommandSourceStack source = ctx.getSource();
 		ReloadReport report = skins.reload();
 		int pushed = report.changed() ? PackDelivery.pushToAll(source.getServer(), skins) : 0;
+		if (report.lookTakenAway()) redrawEveryone(source.getServer());
 		int loaded = report.loaded().size();
 		String pack = report.changed()
 				? "The pack changed (" + report.sha1().substring(0, 8) + ") and was sent to " + pushed + " player" + (pushed == 1 ? "" : "s") + " online."

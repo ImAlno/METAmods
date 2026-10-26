@@ -53,8 +53,12 @@ public final class SkinMenu {
 	/** How a refused Remove is worded. */
 	private static final Feedback.Audience REMOVING = new Feedback.Audience.Owner("remove", "nothing changed");
 
-	/** Opens "Your Skins" on its first page. */
+	/**
+	 * Opens "Your Skins" on its first page, once the player's own items are tidied ({@link Skins#tidy}):
+	 * a skin that fell off its item (a smithing upgrade past its Materials) is Unapplied by the time it's listed.
+	 */
 	public static void open(ServerPlayer player, Skins skins) {
+		skins.tidy(player);
 		yourSkins(player, skins, 0);
 	}
 
@@ -188,8 +192,12 @@ public final class SkinMenu {
 
 	private static void remove(ServerPlayer player, Skins skins, String skinId, String name, int fromPage) {
 		OwnershipChange result = skins.remove(player.nameAndId(), skinId);
-		if (result == OwnershipChange.DONE) Feedback.removed(player, name);
-		else Feedback.failed(player, Feedback.whyNot(result, name, REMOVING));
+		if (result == OwnershipChange.DONE) {
+			skins.tidy(player);   // the item it was on, if they have it
+			Feedback.removed(player, name);
+		} else {
+			Feedback.failed(player, Feedback.whyNot(result, name, REMOVING));
+		}
 		yourSkins(player, skins, fromPage);
 	}
 
