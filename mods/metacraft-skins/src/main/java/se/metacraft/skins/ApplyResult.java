@@ -18,7 +18,7 @@ public record ApplyResult(Outcome outcome, Optional<String> replaced) {
 		DORMANT_SKIN,
 		/** Nothing is at that place on the player. */
 		NO_ITEM,
-		/** The item isn't of the skin's Kind. */
+		/** The item isn't of the skin's Kind, or not of a Material the skin is limited to. */
 		DOESNT_FIT,
 		/** The item already carries this application of the skin. */
 		ALREADY_APPLIED,

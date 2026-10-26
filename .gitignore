@@ -48,3 +48,8 @@ hs_err_*.log
 replay_*.log
 *.hprof
 *.jfr
+
+# Local working notes
+/.scratch/
+/skin/
+/GLOSSARY.md

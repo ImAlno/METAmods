@@ -103,6 +103,13 @@ public final class SkinsCommandTests {
 			List<String> list = run(server, LevelBasedPermissionSet.GAMEMASTER, "skins list");
 			assertThat(list.stream().anyMatch(l -> l.contains("candy_cane_test") && l.contains("sword")), "list lacks candy_cane_test: " + list);
 			assertThat(list.stream().anyMatch(l -> l.contains("hat") && l.contains("Dormant") && l.contains("unknown kind")), "list lacks the Dormant hat: " + list);
+			// A limited skin's Materials follow its Kind, in vanilla order whatever skin.json5's order; an unlimited one is unchanged.
+			fx.limited("cap_list_test", "helmet", "[\"turtle\", \"leather\"]");
+			run(server, LevelBasedPermissionSet.ADMIN, "skins reload");
+			List<String> limited = run(server, LevelBasedPermissionSet.GAMEMASTER, "skins list");
+			assertThat(limited.contains("cap_list_test (helmet: leather, turtle)") && limited.contains("candy_cane_test (sword)"), "the list with Materials: " + limited);
+			fx.delete("cap_list_test");
+			run(server, LevelBasedPermissionSet.ADMIN, "skins reload");
 			ownershipCommands(helper, fx);
 			skinMenuAndSkinnedItemsReachPlayers(helper, fx);
 			tokensAndClaims(helper, fx);

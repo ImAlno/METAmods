@@ -149,6 +149,21 @@ public final class SkinsPackTests {
 		helper.succeed();
 	}
 
+	/** Materials aren't part of a Look: limiting a skin, or changing its list, needs no download. */
+	@GameTest
+	public void aMaterialsOnlyEditLeavesThePackAlone(GameTestHelper helper) {
+		SkinFixtures fx = SkinFixtures.create().lookOnly("poop_hat_test", "helmet");
+		ReloadReport unlimited = fx.reload();
+		fx.file("poop_hat_test", "skin.json5", "{ name: \"poop_hat_test skin\", kind: \"helmet\", look: { model: \"poop_hat_test.json\" }, materials: [\"leather\"] }");
+		ReloadReport limited = fx.reload();
+		assertThat(limited.loaded().equals(List.of("poop_hat_test")), "the limited hat didn't load: " + limited);
+		assertThat(limited.sha1().equals(unlimited.sha1()) && !limited.changed(), "limiting a skin to Materials changed the pack");
+		fx.file("poop_hat_test", "skin.json5", "{ name: \"poop_hat_test skin\", kind: \"helmet\", look: { model: \"poop_hat_test.json\" }, materials: [\"turtle\", \"iron\"] }");
+		ReloadReport changed = fx.reload();
+		assertThat(changed.sha1().equals(unlimited.sha1()) && !changed.changed(), "changing a skin's Materials changed the pack");
+		helper.succeed();
+	}
+
 	/** Adding a skin, changing a texture or breaking a skin changes the SHA-1, and the report says so. */
 	@GameTest
 	public void changedContentChangesTheSha1(GameTestHelper helper) {

@@ -10,17 +10,23 @@ import se.metacraft.skins.PlayerSkins;
 import se.metacraft.skins.SkinMarker;
 import se.metacraft.skins.Skins;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
+import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.players.NameAndId;
+import net.minecraft.tags.ItemTags;
+import net.minecraft.tags.TagKey;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.lang.reflect.Method;
 import java.nio.file.Files;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -300,6 +306,74 @@ public final class ApplyTests {
 		assertThat(fx.skins.candidates(player, "plate").getFirst().item().is(Items.IRON_CHESTPLATE), "the chestplate skin fits "
 				+ fx.skins.candidates(player, "plate"));
 		helper.succeed();
+	}
+
+	/**
+	 * A skin limited to Materials fits only items of its Kind made of one of them: a leather-only
+	 * helmet skin goes on a leather helmet and nothing else, a diamond-and-netherite sword skin on
+	 * both of those swords. Applying it to anything else is refused.
+	 */
+	@GameTest
+	public void aLimitedSkinFitsOnlyItsMaterials(GameTestHelper helper) {
+		SkinFixtures fx = SkinFixtures.create().limited("cap", "helmet", "[\"leather\"]").limited("fine_blade", "sword", "[\"netherite\", \"diamond\"]");
+		fx.reload();
+		ServerPlayer player = carrying(helper, new ItemStack(Items.DIAMOND_HELMET), new ItemStack(Items.LEATHER_HELMET), new ItemStack(Items.TURTLE_HELMET),
+				new ItemStack(Items.WOODEN_SWORD), new ItemStack(Items.IRON_SWORD), new ItemStack(Items.DIAMOND_SWORD), new ItemStack(Items.GOLDEN_SWORD),
+				new ItemStack(Items.NETHERITE_SWORD), new ItemStack(Items.LEATHER_BOOTS));
+		player.setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.CHAINMAIL_HELMET));
+		fx.skins.grant(player.nameAndId(), "cap");
+		fx.skins.grant(player.nameAndId(), "fine_blade");
+
+		assertCandidates(fx, player, "cap", List.of("Hotbar slot 2"));
+		assertCandidates(fx, player, "fine_blade", List.of("Hotbar slot 6", "Hotbar slot 8"));
+		assertRefused(fx.skins.apply(player, "cap", ItemLocation.hotbar(0)), ApplyResult.Outcome.DOESNT_FIT);
+		assertRefused(fx.skins.apply(player, "cap", ItemLocation.worn(EquipmentSlot.HEAD)), ApplyResult.Outcome.DOESNT_FIT);
+		assertRefused(fx.skins.apply(player, "fine_blade", ItemLocation.hotbar(4)), ApplyResult.Outcome.DOESNT_FIT);
+		assertThat(!player.getInventory().getItem(0).has(SkinMarker.TYPE) && !player.getInventory().getItem(4).has(SkinMarker.TYPE),
+				"a refused apply marked the item");
+		assertThat(fx.skins.apply(player, "cap", ItemLocation.hotbar(1)).applied(), "the leather helmet refused the leather-only skin");
+		assertThat(fx.skins.liveSkin(player.getInventory().getItem(1)).isPresent(), "the leather helmet's skin isn't live");
+		assertThat(fx.skins.apply(player, "fine_blade", ItemLocation.hotbar(7)).applied(), "the netherite sword refused the skin");
+		assertThat(fx.skins.liveSkin(player.getInventory().getItem(7)).isPresent(), "the netherite sword's skin isn't live");
+		helper.succeed();
+	}
+
+	/**
+	 * An item of the Kind that isn't one of vanilla's (here a totem tagged into
+	 * {@code #minecraft:swords}, as another mod's ruby sword would be) has no Material it's known by:
+	 * a skin with no {@code materials} fits it, and one listing every Material doesn't.
+	 */
+	@GameTest
+	public void onlyAnUnlimitedSkinFitsAnItemOfAnUnrecognisedMaterial(GameTestHelper helper) {
+		SkinFixtures fx = SkinFixtures.create().skin("any_blade", "sword")
+				.limited("every_blade", "sword", "[\"wood\", \"stone\", \"copper\", \"iron\", \"gold\", \"diamond\", \"netherite\"]");
+		fx.reload();
+		ServerPlayer player = carrying(helper, new ItemStack(Items.TOTEM_OF_UNDYING), new ItemStack(Items.STONE_SWORD));
+		fx.skins.grant(player.nameAndId(), "any_blade");
+		fx.skins.grant(player.nameAndId(), "every_blade");
+		Holder.Reference<Item> totem = Items.TOTEM_OF_UNDYING.builtInRegistryHolder();
+		List<TagKey<Item>> tags = totem.tags().toList();
+		bindTags(totem, Stream.concat(tags.stream(), Stream.of(ItemTags.SWORDS)).toList());
+		try {
+			assertCandidates(fx, player, "any_blade", List.of("Hotbar slot 1", "Hotbar slot 2"));
+			assertCandidates(fx, player, "every_blade", List.of("Hotbar slot 2"));
+			assertRefused(fx.skins.apply(player, "every_blade", ItemLocation.hotbar(0)), ApplyResult.Outcome.DOESNT_FIT);
+			assertThat(fx.skins.apply(player, "any_blade", ItemLocation.hotbar(0)).applied(), "the unlimited skin refused the totem sword");
+		} finally {
+			bindTags(totem, tags);
+		}
+		helper.succeed();
+	}
+
+	/** Item tags are bound by the server on each data reload; a test binds one more for a moment. */
+	private static void bindTags(Holder.Reference<Item> item, List<TagKey<Item>> tags) {
+		try {
+			Method bind = Holder.Reference.class.getDeclaredMethod("bindTags", Collection.class);
+			bind.setAccessible(true);
+			bind.invoke(item, tags);
+		} catch (ReflectiveOperationException e) {
+			throw new IllegalStateException(e);
+		}
 	}
 
 	/** The apply screen says what clicking each item would do. */

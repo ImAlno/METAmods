@@ -83,6 +83,60 @@ public final class SkinDefinitionTests {
 		helper.succeed();
 	}
 
+	/** {@code materials} must be a list of one or more names; anything else rejects the skin. */
+	@GameTest
+	public void aMaterialsFieldThatIsntANonEmptyListIsRejected(GameTestHelper helper) {
+		SkinFixtures fx = withHealthyNeighbour().limited("bare", "sword", "\"diamond\"").limited("none", "sword", "[]")
+				.limited("numbered", "sword", "[ 4 ]");
+		ReloadReport report = fx.reload();
+		assertRejected(report, "bare", "skin.json5", "\"materials\" must be a list");
+		assertRejected(report, "none", "skin.json5", "\"materials\" is empty");
+		assertRejected(report, "numbered", "skin.json5", "\"materials\" must be a list");
+		helper.succeed();
+	}
+
+	/**
+	 * A Material must be one of the fixed names: {@code wooden} and {@code golden} get a hint, any
+	 * other unknown name lists what the Kind comes in, as an unknown Kind lists the Kinds.
+	 */
+	@GameTest
+	public void anUnknownMaterialIsRejectedWithAHint(GameTestHelper helper) {
+		SkinFixtures fx = withHealthyNeighbour().limited("wooden", "sword", "[\"wooden\"]").limited("golden", "helmet", "[\"leather\", \"golden\"]")
+				.limited("ruby", "pickaxe", "[\"ruby\"]").limited("shell", "helmet", "[\"Diamond\"]");
+		ReloadReport report = fx.reload();
+		assertRejected(report, "wooden", "skin.json5", "unknown material \"wooden\" (did you mean \"wood\"?)");
+		assertRejected(report, "golden", "skin.json5", "unknown material \"golden\" (did you mean \"gold\"?)");
+		assertRejected(report, "ruby", "skin.json5", "unknown material \"ruby\" (one of: wood, stone, copper, iron, gold, diamond, netherite)");
+		assertRejected(report, "shell", "skin.json5",
+				"unknown material \"Diamond\" (one of: leather, chainmail, copper, iron, gold, diamond, netherite, turtle)");
+		helper.succeed();
+	}
+
+	/** A Material the Kind doesn't come in, any {@code materials} on a mace or elytra, and a duplicate are rejected. */
+	@GameTest
+	public void anImpossibleOrRepeatedMaterialIsRejected(GameTestHelper helper) {
+		SkinFixtures fx = withHealthyNeighbour().limited("turtle_sword", "sword", "[\"diamond\", \"turtle\"]").limited("wooden_boots", "boots", "[\"wood\"]")
+				.limited("hammer", "mace", "[\"diamond\"]").limited("wings", "elytra", "[\"leather\"]")
+				.limited("twice", "sword", "[\"diamond\", \"netherite\", \"diamond\"]");
+		ReloadReport report = fx.reload();
+		assertRejected(report, "turtle_sword", "skin.json5", "\"turtle\" isn't a material of the sword Kind (it comes in: wood, stone, copper, iron, gold, diamond, netherite)");
+		assertRejected(report, "wooden_boots", "skin.json5", "\"wood\" isn't a material of the boots Kind (it comes in: leather, chainmail, copper, iron, gold, diamond, netherite)");
+		assertRejected(report, "hammer", "skin.json5", "the mace Kind has no materials, so it takes no \"materials\"");
+		assertRejected(report, "wings", "skin.json5", "the elytra Kind has no materials, so it takes no \"materials\"");
+		assertRejected(report, "twice", "skin.json5", "\"diamond\" is listed twice in \"materials\"");
+		helper.succeed();
+	}
+
+	/** Every Material of the Kind may be listed, in any order, with no warning. */
+	@GameTest
+	public void aSkinMayListEveryMaterialOfItsKind(GameTestHelper helper) {
+		SkinFixtures fx = SkinFixtures.create()
+				.limited("all_helmets", "helmet", "[\"turtle\", \"netherite\", \"diamond\", \"gold\", \"iron\", \"copper\", \"chainmail\", \"leather\"]");
+		ReloadReport report = fx.reload();
+		assertThat(report.loaded().equals(List.of("all_helmets")) && report.warnings().isEmpty(), "every helmet Material: " + report);
+		helper.succeed();
+	}
+
 	/** {@code /skins list}'s source: every folder with its Kind, and the reason a Dormant one failed. */
 	@GameTest
 	public void allSkinsListsEveryFolderWithDormantReasons(GameTestHelper helper) {

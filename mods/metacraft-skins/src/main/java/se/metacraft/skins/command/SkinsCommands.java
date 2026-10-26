@@ -6,6 +6,7 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import com.mojang.brigadier.exceptions.SimpleCommandExceptionType;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
+import se.metacraft.skins.Material;
 import se.metacraft.skins.MetacraftSkins;
 import se.metacraft.skins.OwnedSkin;
 import se.metacraft.skins.OwnershipChange;
@@ -37,6 +38,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 /**
  * {@code /skins}: one permission node per command (Fabric's Permission API, so LuckPerms can
@@ -44,7 +46,7 @@ import java.util.function.Supplier;
  * subcommands so far:
  * <ul>
  *   <li>{@code /skins} alone ({@code metacraft-skins:menu}, everyone): opens the player's Skin Menu;</li>
- *   <li>{@code list} ({@code metacraft-skins:list}, gamemasters): every skin, its Kind, and why a Dormant one failed;</li>
+ *   <li>{@code list} ({@code metacraft-skins:list}, gamemasters): every skin, its Kind and any Materials it's limited to, and why a Dormant one failed;</li>
  *   <li>{@code reload} ({@code metacraft-skins:reload}, admins): re-read the skins and settings and rebuild the pack;
  *       a changed pack is pushed to everyone online. Vanilla {@code /reload} never touches skins;</li>
  *   <li>{@code give <targets> <skin> [count]} ({@code metacraft-skins:give}, gamemasters): Skin Tokens for online players,
@@ -134,7 +136,9 @@ public final class SkinsCommands {
 				+ skins.skinsFolder()).withStyle(ChatFormatting.GOLD), false);
 		for (SkinSummary skin : all) {
 			var line = Component.literal(skin.id()).withStyle(skin.dormant() ? ChatFormatting.GRAY : ChatFormatting.WHITE)
-					.append(Component.literal(" (" + skin.kind().map(k -> k.id()).orElse("unknown Kind") + ")").withStyle(ChatFormatting.GRAY));
+					.append(Component.literal(" (" + skin.kind().map(k -> k.id()).orElse("unknown Kind")
+							+ skin.materials().map(m -> ": " + m.stream().map(Material::id).collect(Collectors.joining(", "))).orElse("") + ")")
+							.withStyle(ChatFormatting.GRAY));
 			skin.dormantReason().ifPresent(reason -> line.append(Component.literal(" Dormant: " + reason).withStyle(ChatFormatting.RED)));
 			source.sendSuccess(() -> line, false);
 		}

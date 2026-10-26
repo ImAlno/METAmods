@@ -82,6 +82,7 @@ Drop the export in as it is, then run `/skins reload`. The mod cleans it up as i
 {
 	name: "Emerald Pick",               // plain text, shown on tokens, menus and items
 	kind: "pickaxe",                    // the Kind it fits, below
+	// materials: ["diamond", "netherite"],   // optional: only these Materials of the Kind
 	look: { model: "emerald_pick.json" },
 	description: "Mined from a creeper's dream.",   // optional: one gray line
 	perks: [ /* optional, see Perks */ ],
@@ -92,18 +93,38 @@ Drop the export in as it is, then run `/skins reload`. The mod cleans it up as i
 | --- | --- |
 | `name` | required, plain text |
 | `kind` | required: `sword`, `axe`, `pickaxe`, `shovel`, `hoe`, `mace`, `spear`, `helmet`, `chestplate`, `leggings`, `boots` or `elytra` |
+| `materials` | optional: a list of one or more of the Kind's Materials, below; leave it out to fit every Material |
 | `look` | required: `{ model: "<file>.json" }`, except a spear, which takes `{ icon: "<file>.json", in_hand: "<file>.json" }` |
 | `description` | optional, one line |
 | `perks` | optional; leave it out for a Look-only skin |
 
 Any other field rejects the skin. The files `look` names must be `.json` files in the skin's folder.
 
-**Kinds.** A Kind is every material of one family of items: a `sword` skin fits any sword, wood to
-netherite. Membership is the vanilla item tag (`#minecraft:swords`, `#minecraft:head_armor` and so on),
-so other mods' items count when they are tagged; the mace is anything in `#minecraft:mace_enchantable`
-and the elytra is anything that glides from the chest slot. Anything that stacks never fits, and nor do
-bows, crossbows, tridents, shields, fishing rods, shears, flint and steel, brushes and the on-a-stick
-items. Helmet skins fit all head armour, the turtle shell included.
+**Kinds.** A Kind is one family of items: a `sword` skin fits any sword, wood to netherite, unless
+`materials` limits it. Membership is the vanilla item tag (`#minecraft:swords`, `#minecraft:head_armor`
+and so on), so other mods' items count when they are tagged; the mace is anything in
+`#minecraft:mace_enchantable` and the elytra is anything that glides from the chest slot. Anything that
+stacks never fits, and nor do bows, crossbows, tridents, shields, fishing rods, shears, flint and steel,
+brushes and the on-a-stick items. Helmet skins fit all head armour, the turtle shell included.
+
+**Materials.** `materials: ["diamond", "netherite"]` limits a skin to those Materials of its Kind. The
+names are nouns, as in vanilla's material ids (`wood` and `gold`, not `wooden` and `golden`):
+
+| Kind | Materials |
+| --- | --- |
+| `sword`, `axe`, `pickaxe`, `shovel`, `hoe`, `spear` | `wood`, `stone`, `copper`, `iron`, `gold`, `diamond`, `netherite` |
+| `chestplate`, `leggings`, `boots` | `leather`, `chainmail`, `copper`, `iron`, `gold`, `diamond`, `netherite` |
+| `helmet` | the armour seven, and `turtle` (the turtle shell) |
+| `mace`, `elytra` | none: these skins take no `materials` |
+
+An item's Material is read off the item itself: one of the vanilla items above. Any other item of the
+Kind (another mod's ruby sword) has no Material the mod knows, so it fits only skins with no
+`materials`. Listing every Material of the Kind is allowed, but it isn't the same as leaving the field
+out: the full list doesn't fit such an item. Materials aren't part of the Look, so changing them never
+changes the pack. Narrowing the list takes the skin off only the items that no longer fit, each when
+the server next touches it, and the skin goes Unapplied for its Owner; items that still fit keep it.
+Widening the list again before an item is touched leaves it as it was. (Changing `kind` is different:
+see [Dormant skins and permanent ids](#dormant-skins-and-permanent-ids).)
 
 **How a Look shows:**
 
@@ -239,6 +260,9 @@ file and the reason, shown to whoever ran `/skins reload`, and listed by `/skins
 
 - broken json5, or an unknown field anywhere;
 - a missing `name`, `kind` or `look`, an unknown Kind, or the wrong `look` shape for the Kind;
+- a `materials` that isn't a list of names, an empty list, an unknown Material (`wooden` and `golden`
+  get a hint), a Material the Kind doesn't come in (`turtle` on a sword, `wood` on boots), the same
+  Material twice, or any `materials` on a mace or elytra skin;
 - a Trigger the Kind doesn't allow, an effect the Trigger doesn't allow, an unknown effect, attribute
   or particle id, or a value out of range;
 - a model file that isn't in the folder, or isn't a model;
@@ -310,7 +334,9 @@ vanilla level to fall back on when no permissions mod is installed. Skin ids tab
   game yet).
 - **`info`** shows what a player owns, with claim dates (UTC) and each skin's state: Applied, Unapplied,
   Applied in another world, or Dormant. It can't say which item carries a skin. A damaged file says so.
-- **`list`** shows every skin folder with its Kind and, for a Dormant skin, why it didn't load.
+- **`list`** shows every skin folder with its Kind and, for a Dormant skin, why it didn't load:
+  `candy_sword (sword)`. A skin limited to Materials lists them after its Kind, in the order of the
+  Materials table: `crown (helmet: leather, turtle)`.
 - **`grant`** makes a player own a skin without a token. Refused if they already own it, or the skin is
   unknown or Dormant. An online player gets the claim message.
 - **`revoke`** takes a skin away, Dormant ones too. The item carrying it reverts wherever it is. An online
@@ -400,9 +426,11 @@ Rules that answer most support questions:
   then only the new item does.
 - **Overwritten skins never come back.** Applying over someone else's skin makes theirs Unapplied (still
   theirs). Removing the new skin later leaves the item plain.
-- **What keeps a skin:** the anvil (renaming and repairing), the grindstone, enchanting, Mending and the
-  smithing table's netherite upgrade. A smithing result of another Kind (only possible with data packs)
-  drops it, and the skin goes Unapplied. **Crafting-grid repair** makes a new item, so the skin is lost;
+- **What keeps a skin:** the anvil (renaming and repairing), the grindstone, enchanting and Mending. The
+  smithing table's netherite upgrade keeps it only if the skin allows netherite (it has no `materials`,
+  or lists `netherite`): a diamond-only skin falls off the upgraded item. So does a smithing result of
+  another Kind (only possible with data packs). A skin that falls off is plain at once and goes
+  Unapplied for its Owner when the server next touches the item. **Crafting-grid repair** makes a new item, so the skin is lost;
   the Owner applies it again.
 - **Tooltips.** A Skinned Item shows, after its own lines, "Skin: <Skin>" (gold), the Perk lines, and
   "Owned by <player>" (the last known name of an offline Owner).

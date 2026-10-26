@@ -489,6 +489,89 @@ public final class RevertTests {
 		helper.succeed();
 	}
 
+	/**
+	 * The netherite upgrade keeps a skin only if the skin allows netherite: a diamond-only skin
+	 * falls off (plain at once, Unapplied when the item is next touched), and one listing diamond
+	 * and netherite survives it.
+	 */
+	@GameTest
+	public void theNetheriteUpgradeKeepsASkinOnlyIfItAllowsNetherite(GameTestHelper helper) {
+		SkinFixtures fx = SkinFixtures.create().limited("diamond_blade", "sword", "[\"diamond\"]")
+				.limited("fine_blade", "sword", "[\"diamond\", \"netherite\"]");
+		fx.reload();
+		ServerPlayer owner = ApplyTests.carrying(helper, new ItemStack(Items.DIAMOND_SWORD), new ItemStack(Items.DIAMOND_SWORD));
+		fx.skins.grant(owner.nameAndId(), "diamond_blade");
+		fx.skins.grant(owner.nameAndId(), "fine_blade");
+		fx.skins.apply(owner, "diamond_blade", ItemLocation.hotbar(0));
+		fx.skins.apply(owner, "fine_blade", ItemLocation.hotbar(1));
+		ItemStack upgradedDiamondOnly = upgrade(helper, owner.getInventory().getItem(0));
+		ItemStack upgradedFine = upgrade(helper, owner.getInventory().getItem(1));
+		owner.getInventory().setItem(0, upgradedDiamondOnly);
+		owner.getInventory().setItem(1, upgradedFine);
+
+		assertThat(upgradedDiamondOnly.is(Items.NETHERITE_SWORD) && fx.skins.liveSkin(upgradedDiamondOnly).isEmpty(),
+				"the diamond-only skin is live on " + upgradedDiamondOnly);
+		assertThat(upgradedFine.is(Items.NETHERITE_SWORD) && fx.skins.liveSkin(upgradedFine).isPresent(), "the skin allowing netherite fell off");
+		assertThat(state(fx.skins, owner, "diamond_blade") == OwnedSkin.State.APPLIED, "the skin went Unapplied before its item was touched");
+		assertThat(fx.skins.revertStale(owner) == 1 && !upgradedDiamondOnly.has(SkinMarker.TYPE), "the upgraded sword kept the diamond-only marker");
+		assertThat(upgradedFine.has(SkinMarker.TYPE), "the touch took the netherite-allowing skin off");
+		assertThat(state(fx.restart(), owner, "diamond_blade") == OwnedSkin.State.UNAPPLIED, "the skin that fell off: " + state(fx.skins, owner, "diamond_blade"));
+		assertThat(state(fx.skins, owner, "fine_blade") == OwnedSkin.State.APPLIED, "the skin that survived: " + state(fx.skins, owner, "fine_blade"));
+		helper.succeed();
+	}
+
+	/**
+	 * Narrowing {@code materials} takes the skin off only the items that no longer fit, item by
+	 * item as each is touched; widening the list again before an item is touched leaves it live,
+	 * as if nothing happened (unlike a Kind change).
+	 */
+	@GameTest
+	public void narrowingMaterialsTakesTheSkinOffOnlyItemsThatNoLongerFit(GameTestHelper helper) {
+		SkinFixtures fx = SkinFixtures.create().skin("cap", "helmet");
+		fx.reload();
+		ServerPlayer alice = ApplyTests.carrying(helper, new ItemStack(Items.DIAMOND_HELMET));
+		ServerPlayer bob = ApplyTests.carrying(helper, new ItemStack(Items.LEATHER_HELMET));
+		ServerPlayer carol = ApplyTests.carrying(helper, new ItemStack(Items.IRON_HELMET));
+		for (ServerPlayer player : List.of(alice, bob, carol)) {
+			fx.skins.grant(player.nameAndId(), "cap");
+			fx.skins.apply(player, "cap", ItemLocation.hotbar(0));
+		}
+		ItemStack alices = alice.getInventory().getItem(0), bobs = bob.getInventory().getItem(0), carols = carol.getInventory().getItem(0);
+
+		fx.limited("cap", "helmet", "[\"leather\"]");
+		fx.reload();
+		assertThat(fx.skins.liveSkin(alices).isEmpty() && fx.skins.liveSkin(carols).isEmpty(), "a narrowed skin is live on a helmet it no longer fits");
+		assertThat(fx.skins.liveSkin(bobs).isPresent(), "narrowing took the skin off the leather helmet");
+		assertThat(fx.skins.revertStale(alice) == 1 && !alices.has(SkinMarker.TYPE), "Alice's diamond helmet kept its marker");
+		assertThat(fx.skins.revertStale(bob) == 0 && fx.skins.liveSkin(bobs).isPresent(), "touching Bob's leather helmet took the skin off");
+		assertThat(state(fx.skins, alice, "cap") == OwnedSkin.State.UNAPPLIED, "Alice's skin that fell off is " + state(fx.skins, alice, "cap"));
+		assertThat(state(fx.skins, bob, "cap") == OwnedSkin.State.APPLIED, "Bob's skin is " + state(fx.skins, bob, "cap"));
+
+		// Carol's helmet wasn't touched while the list was narrow, so widening it brings her skin back.
+		fx.limited("cap", "helmet", "[\"leather\", \"iron\"]");
+		fx.reload();
+		assertThat(fx.skins.liveSkin(carols).isPresent() && fx.skins.revertStale(carol) == 0, "widening didn't leave Carol's iron helmet live");
+		assertThat(state(fx.skins, carol, "cap") == OwnedSkin.State.APPLIED, "Carol's skin is " + state(fx.skins, carol, "cap"));
+		assertThat(fx.skins.liveSkin(alices).isEmpty(), "Alice's touched diamond helmet came back");
+		helper.succeed();
+	}
+
+	/** The netherite upgrade, as the smithing table makes it. */
+	private static ItemStack upgrade(GameTestHelper helper, ItemStack base) {
+		ServerLevel level = helper.getLevel();
+		SmithingRecipeInput input = new SmithingRecipeInput(new ItemStack(Items.NETHERITE_UPGRADE_SMITHING_TEMPLATE), base.copy(),
+				new ItemStack(Items.NETHERITE_INGOT));
+		return level.getServer().getRecipeManager().getRecipeFor(RecipeType.SMITHING, input, level)
+				.orElseThrow(() -> SkinFixtures.fail("no netherite upgrade")).value().assemble(input);
+	}
+
+	/** The state of one skin the player owns. */
+	private static OwnedSkin.State state(Skins skins, ServerPlayer player, String skin) {
+		PlayerSkins owned = skins.ownedSkins(player.getUUID());
+		return owned.skins().stream().filter(s -> s.id().equals(skin)).findFirst()
+				.orElseThrow(() -> SkinFixtures.fail(player.getGameProfile().name() + " doesn't own " + skin + ": " + owned)).state();
+	}
+
 	private static Identifier model(GameTestHelper helper, SkinFixtures fx, ItemStack stack, ServerPlayer viewer) {
 		return ViewTests.view(helper, fx, stack, viewer).get(DataComponents.ITEM_MODEL);
 	}

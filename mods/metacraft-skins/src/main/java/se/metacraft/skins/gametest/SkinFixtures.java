@@ -111,6 +111,17 @@ final class SkinFixtures {
 	}
 
 	/**
+	 * A Look-only skin (not a spear) named "<id> skin", limited to Materials as written in
+	 * {@code skin.json5}: {@code materials} is the json5 value, e.g. {@code ["leather", "turtle"]}.
+	 */
+	SkinFixtures limited(String id, String kind, String materials) {
+		return file(id, "skin.json5", "{ name: \"" + id + " skin\", kind: \"" + kind + "\", look: { model: \"" + id + ".json\" }, materials: "
+				+ materials + " }")
+				.file(id, id + ".json", model(id))
+				.png(id, id);
+	}
+
+	/**
 	 * A valid skin (not a spear) named "<id> skin" with these Perks, written as an admin would:
 	 * {@code perks} is the json5 list, e.g. {@code [ { trigger: "held", effects: [ ... ] } ]}.
 	 */

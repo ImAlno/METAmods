@@ -63,7 +63,8 @@ import java.util.stream.Stream;
  *
  * <p>A Skinned Item stores only its {@link SkinMarker}. Whether it shows a Look is decided every
  * time it's sent to a viewer ({@link #liveSkin}, {@link #clientView}), so an item that went stale
- * (its skin moved, removed, overwritten, revoked, changed Kind, or from another world) is plain at
+ * (its skin moved, removed, overwritten, revoked, changed Kind, or from another world) or no longer
+ * fits its skin (a netherite upgrade past the skin's Materials) is plain at
  * once wherever it is. The server also clears a stale marker when it next touches the item
  * ({@link #revertStale}, driven by {@link StaleReverts}); a Dormant skin's markers are kept, so its
  * items come back when its definition does.
@@ -221,14 +222,15 @@ public final class Skins {
 	 * skin is plain from now on. A skin already on the item (theirs or another player's, live or
 	 * Dormant) is replaced, and becomes Unapplied for its Owner, who keeps owning it; if that Owner's
 	 * file is damaged, it's left alone (and logged). Refused, changing nothing,
-	 * if the skin is unknown or Dormant, they don't own it, nothing that fits is there, it already
-	 * carries this application, or their file is damaged or can't be saved.
+	 * if the skin is unknown or Dormant, they don't own it, nothing that {@linkplain #fits fits} is there
+	 * (Material included), it already carries this application, or their file is damaged or can't be saved.
 	 */
 	public synchronized ApplyResult apply(ServerPlayer player, String skinId, ItemLocation where) {
 		Entry skin = skins.get(skinId);
 		if (skin == null) return ApplyResult.refused(ApplyResult.Outcome.UNKNOWN_SKIN);
 		if (skin.loaded().isEmpty()) return ApplyResult.refused(ApplyResult.Outcome.DORMANT_SKIN);
-		Kind kind = skin.loaded().get().kind();
+		SkinFolder.Loaded loaded = skin.loaded().get();
+		Kind kind = loaded.kind();
 		if (!(ownership.read(player.getUUID()) instanceof OwnershipStore.Readable(var record))) {
 			return ApplyResult.refused(ApplyResult.Outcome.DAMAGED_FILE);
 		}
@@ -236,7 +238,7 @@ public final class Skins {
 		if (owned == null) return ApplyResult.refused(ApplyResult.Outcome.NOT_OWNED);
 		ItemStack item = where.in(player.getInventory());
 		if (item.isEmpty()) return ApplyResult.refused(ApplyResult.Outcome.NO_ITEM);
-		if (!kind.fits(item)) return ApplyResult.refused(ApplyResult.Outcome.DOESNT_FIT);
+		if (!fits(loaded, item)) return ApplyResult.refused(ApplyResult.Outcome.DOESNT_FIT);
 		Optional<Displaced> current = displaced(item);
 		if (current.filter(c -> c.is(player.getUUID(), skinId)).isPresent()) return ApplyResult.refused(ApplyResult.Outcome.ALREADY_APPLIED);
 
@@ -405,8 +407,9 @@ public final class Skins {
 	/**
 	 * The skin this item carries, if its application is live: the Owner's record still owns the
 	 * skin, with this very application, stamped by this world; the skin isn't Dormant; and the
-	 * item still fits its Kind. Anything else (moved, removed, overwritten, revoked, another world's,
-	 * a Kind change) is a plain item. Safe from any thread (Polymer asks while encoding packets).
+	 * item still {@linkplain #fits fits} it. Anything else (moved, removed, overwritten, revoked, another
+	 * world's, a Kind change, a Material the skin no longer allows) is a plain item. Safe from any thread
+	 * (Polymer asks while encoding packets).
 	 */
 	public synchronized Optional<LiveSkin> liveSkin(ItemStack stack) {
 		SkinMarker marker = stack.get(SkinMarker.TYPE);
@@ -425,7 +428,10 @@ public final class Skins {
 		ASLEEP,
 		/** Plain for good: moved, removed, overwritten, revoked, another world's, or a Kind change. */
 		STALE,
-		/** The current application, on an item that no longer fits the skin (a smithing recipe into another Kind): the skin falls off. */
+		/**
+		 * The current application, on an item that no longer fits the skin (a smithing recipe into another
+		 * Kind or Material, or a narrowed {@code materials} list): the skin falls off.
+		 */
 		NO_LONGER_FITS
 	}
 
@@ -434,7 +440,17 @@ public final class Skins {
 		if (skin == null || skin.loaded().isEmpty()) return Standing.ASLEEP;
 		if (!(ownership.read(marker.owner()) instanceof OwnershipStore.Readable(var record))) return Standing.ASLEEP;
 		if (!isCurrent(record, marker)) return Standing.STALE;
-		return skin.loaded().get().kind().fits(stack) ? Standing.LIVE : Standing.NO_LONGER_FITS;
+		return fits(skin.loaded().get(), stack) ? Standing.LIVE : Standing.NO_LONGER_FITS;
+	}
+
+	/**
+	 * Does the skin fit this item? It must be of the skin's Kind and, if the skin is limited to
+	 * Materials, made of one of them; an item of no Material the mod knows (another mod's) fits only
+	 * a skin that isn't limited.
+	 */
+	private static boolean fits(SkinFolder.Loaded skin, ItemStack item) {
+		if (!skin.kind().fits(item)) return false;
+		return skin.materials().map(allowed -> Material.of(item).filter(allowed::contains).isPresent()).orElse(true);
 	}
 
 	/** The skin's application, if it's on an item in this world (stamped here) and the skin hasn't changed Kind since. */
@@ -559,18 +575,17 @@ public final class Skins {
 	}
 
 	/**
-	 * Every item on the player the skin fits, in the apply screen's order (hotbar, inventory, worn
-	 * armour head to feet, offhand), each with the skin applying would replace (live or Dormant).
+	 * Every item on the player the skin {@linkplain #fits fits}, Material included, in the apply screen's
+	 * order (hotbar, inventory, worn armour head to feet, offhand), each with the skin applying would replace (live or Dormant).
 	 * Empty for an unknown or Dormant skin.
 	 */
 	public synchronized List<Candidate> candidates(ServerPlayer player, String skinId) {
 		Entry skin = skins.get(skinId);
 		if (skin == null || skin.loaded().isEmpty()) return List.of();
-		Kind kind = skin.loaded().get().kind();
 		List<Candidate> candidates = new ArrayList<>();
 		for (ItemLocation where : ItemLocation.ON_A_PLAYER) {
 			ItemStack item = where.in(player.getInventory());
-			if (!kind.fits(item)) continue;
+			if (!fits(skin.loaded().get(), item)) continue;
 			Optional<Displaced> current = displaced(item);
 			boolean mine = current.filter(c -> c.is(player.getUUID(), skinId)).isPresent();
 			candidates.add(new Candidate(where, item, mine ? Optional.empty() : current.map(Displaced::name), mine));
@@ -739,7 +754,8 @@ public final class Skins {
 	}
 
 	private SkinSummary summary(Entry e) {
-		return new SkinSummary(e.id(), e.loaded().map(SkinFolder.Loaded::name), e.kind(), e.loaded().flatMap(SkinFolder.Loaded::description),
+		return new SkinSummary(e.id(), e.loaded().map(SkinFolder.Loaded::name), e.kind(), e.loaded().flatMap(SkinFolder.Loaded::materials),
+				e.loaded().flatMap(SkinFolder.Loaded::description),
 				e.loaded().map(l -> inEffect(l.perks())).orElse(List.of()), e.dormantReason());
 	}
 

@@ -14,7 +14,8 @@ import java.util.Locale;
 import java.util.Optional;
 
 /**
- * The fixed family of items a skin fits, every material of it (GLOSSARY: Kind). Membership is the
+ * The fixed family of items a skin fits (GLOSSARY: Kind). A skin fits every {@link Material} of its
+ * Kind unless it's limited to some of them; this is only the Kind test. Membership is the
  * vanilla item tag where there is one, so other mods' items count when they tag them; the elytra
  * has no tag and is anything that glides from the chest slot. Anything that stacks is never a
  * member, and neither are the bow, crossbow, fishing rod, shield, trident and the small tools:

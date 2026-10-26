@@ -17,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,12 +47,18 @@ public final class SkinFolder {
 	private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
 	/** What a resource path segment may hold; ids, model and texture names all become one. */
 	private static final Pattern PATH_SEGMENT = Pattern.compile("[a-z0-9_.-]+");
-	private static final Set<String> FIELDS = Set.of("name", "kind", "look", "description", "perks");
+	private static final Set<String> FIELDS = Set.of("name", "kind", "look", "description", "perks", "materials");
+	/** Unknown Material names that are vanilla's item-name adjectives for a known one. */
+	private static final Map<String, String> MATERIAL_HINTS = Map.of("wooden", "wood", "golden", "gold");
 	private static final List<String> SPEAR_ICON_CONTEXTS = List.of("gui", "ground", "fixed", "on_shelf");
 	private static final double SPEAR_SWAP_ANIMATION_SCALE = 1.95;
 
-	/** A skin that loaded: what later tickets need of its definition, and its files in the pack by path. */
-	record Loaded(String id, String name, Kind kind, Optional<String> description, List<Perk> perks, Map<String, byte[]> files) {}
+	/**
+	 * A skin that loaded: what later tickets need of its definition, and its files in the pack by
+	 * path. {@code materials} is the Materials it's limited to, in vanilla order; empty if it fits every one.
+	 */
+	record Loaded(String id, String name, Kind kind, Optional<List<Material>> materials, Optional<String> description, List<Perk> perks,
+				Map<String, byte[]> files) {}
 
 	static final class Rejected extends Exception {
 		final Path file;
@@ -98,6 +105,8 @@ public final class SkinFolder {
 		String kindId = requiredString(definition, "kind", definitionFile);
 		Kind kind = Kind.byId(kindId).orElseThrow(() -> new Rejected(definitionFile, "unknown kind \"" + kindId + "\" (one of: "
 				+ Arrays.stream(Kind.values()).map(Kind::id).collect(Collectors.joining(", ")) + ")"));
+		Optional<List<Material>> materials = definition.containsKey("materials")
+				? Optional.of(materials(definition.get("materials"), kind, definitionFile)) : Optional.empty();
 		Optional<String> description = definition.containsKey("description")
 				? Optional.of(requiredString(definition, "description", definitionFile)) : Optional.empty();
 		// A Look-only skin simply leaves "perks" out.
@@ -114,7 +123,33 @@ public final class SkinFolder {
 			modelIds.put(slot, model(folder, id, kind, slot, file, definitionFile, files, warnings));
 		}
 		files.put("assets/" + NAMESPACE + "/items/" + id + ".json", itemDefinition(kind, modelIds).getBytes(StandardCharsets.UTF_8));
-		return new Loaded(id, name, kind, description, perks, files);
+		return new Loaded(id, name, kind, materials, description, perks, files);
+	}
+
+	/**
+	 * A skin's {@code materials}: one or more of the Materials its Kind comes in, each once, returned
+	 * in vanilla order. A mace or elytra skin takes none at all.
+	 */
+	private static List<Material> materials(JsonElement element, Kind kind, Path file) throws Rejected {
+		List<Material> allowed = Material.of(kind);
+		if (allowed.isEmpty()) throw new Rejected(file, "the " + kind.id() + " Kind has no materials, so it takes no \"materials\"");
+		String names = allowed.stream().map(Material::id).collect(Collectors.joining(", "));
+		if (!(element instanceof blue.endless.jankson.JsonArray list)) throw new Rejected(file, "\"materials\" must be a list of names (one or more of: " + names + ")");
+		if (list.isEmpty()) throw new Rejected(file, "\"materials\" is empty: leave it out to fit every material, or list some of: " + names);
+		Set<Material> listed = EnumSet.noneOf(Material.class);
+		for (JsonElement entry : list) {
+			if (!(entry instanceof JsonPrimitive p && p.getValue() instanceof String name)) {
+				throw new Rejected(file, "\"materials\" must be a list of names (one or more of: " + names + ")");
+			}
+			Optional<Material> material = Material.byId(name);
+			if (material.isEmpty()) {
+				String hint = MATERIAL_HINTS.containsKey(name) ? "did you mean \"" + MATERIAL_HINTS.get(name) + "\"?" : "one of: " + names;
+				throw new Rejected(file, "unknown material \"" + name + "\" (" + hint + ")");
+			}
+			if (!allowed.contains(material.get())) throw new Rejected(file, "\"" + name + "\" isn't a material of the " + kind.id() + " Kind (it comes in: " + names + ")");
+			if (!listed.add(material.get())) throw new Rejected(file, "\"" + name + "\" is listed twice in \"materials\"");
+		}
+		return allowed.stream().filter(listed::contains).toList();
 	}
 
 	private static String lookShape(Kind kind) {

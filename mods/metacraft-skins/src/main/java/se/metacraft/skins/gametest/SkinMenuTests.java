@@ -129,6 +129,31 @@ public final class SkinMenuTests {
 		helper.succeed();
 	}
 
+	/** The apply screen lists only items the skin fits, Material included: a diamond helmet isn't offered a leather-only skin. */
+	@GameTest
+	public void theApplyScreenHidesItemsOfTheWrongMaterial(GameTestHelper helper) {
+		SkinFixtures fx = SkinFixtures.create().limited("cap", "helmet", "[\"leather\"]");
+		fx.reload();
+		SkinFixtures.Listening player = SkinFixtures.join(helper);
+		try {
+			player.getInventory().clearContent();
+			player.getInventory().setItem(0, new ItemStack(Items.DIAMOND_HELMET));
+			player.getInventory().setItem(1, new ItemStack(Items.LEATHER_HELMET));
+			player.setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.TURTLE_HELMET));
+			fx.skins.grant(player.nameAndId(), "cap");
+			SkinMenu.open(player, fx.skins);
+
+			click(player, 0);
+			assertThat(title(player).equals("Apply: cap skin"), "opened " + title(player));
+			assertThat(slot(player, FIRST_ITEM).is(Items.LEATHER_HELMET) && lore(player, FIRST_ITEM).contains("Hotbar slot 2"),
+					"the first item offered: " + slot(player, FIRST_ITEM) + " " + lore(player, FIRST_ITEM));
+			assertThat(slot(player, FIRST_ITEM + 1).isEmpty(), "a helmet of the wrong Material is offered: " + slot(player, FIRST_ITEM + 1));
+		} finally {
+			helper.getLevel().getServer().getPlayerList().remove(player);
+		}
+		helper.succeed();
+	}
+
 	@GameTest
 	public void moreThanAChestOfSkinsIsPaged(GameTestHelper helper) {
 		SkinFixtures fx = SkinFixtures.create();
