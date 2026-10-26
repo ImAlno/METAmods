@@ -1,6 +1,8 @@
 package se.metacraft.skins;
 
 import com.mojang.serialization.MapCodec;
+import se.metacraft.skins.compat.moredyes.MoreDyesDyes;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.core.Registry;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -23,13 +25,16 @@ import java.util.List;
  * (vanilla's own recipe does leather, and keeps the skin). The grid holds exactly one helmet carrying
  * a live Dyeable Hat and one or more dyes, and nothing else; the result is that helmet with all its
  * components, the skin's marker included, in the mixed colour. A plain helmet, a skin that isn't
- * dyeable and a Dormant hat refuse the dye. It's a special recipe: never in the recipe book, always
+ * dyeable and a Dormant hat refuse the dye. With moredyes installed, its colours dye too, combined as
+ * moredyes combines them on leather. It's a special recipe: never in the recipe book, always
  * allowed under {@code limitedCrafting}, and no client needs to know of it (the server decides every
  * crafting result). The recipe JSON {@code data/metacraft-skins/recipe/dye_skinned_item.json} names it.
  * Who is crafting is unknown here, so anyone can dye a live hat, an Away one included.
  */
 public final class DyeSkinnedItemRecipe extends CustomRecipe {
-	private static final DyeSkinnedItemRecipe INSTANCE = new DyeSkinnedItemRecipe(Dyes.VANILLA);
+	// MoreDyesDyes is only loaded (and moredyes' types only linked) when moredyes is installed.
+	private static final DyeSkinnedItemRecipe INSTANCE = new DyeSkinnedItemRecipe(
+			FabricLoader.getInstance().isModLoaded("moredyes") ? MoreDyesDyes.INSTANCE : Dyes.VANILLA);
 	public static final RecipeSerializer<DyeSkinnedItemRecipe> SERIALIZER = new RecipeSerializer<>(MapCodec.unit(INSTANCE), StreamCodec.unit(INSTANCE));
 
 	/**

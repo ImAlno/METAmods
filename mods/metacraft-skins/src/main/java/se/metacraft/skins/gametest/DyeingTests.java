@@ -1,5 +1,7 @@
 package se.metacraft.skins.gametest;
 
+import eu.pb4.polymer.core.api.item.PolymerItemUtils;
+import se.metacraft.skins.DrawingCheck;
 import se.metacraft.skins.ItemLocation;
 import se.metacraft.skins.MetacraftSkins;
 import se.metacraft.skins.OwnershipChange;
@@ -8,10 +10,13 @@ import se.metacraft.skins.Skins;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.game.ClientboundSetPlayerInventoryPacket;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.ItemTags;
@@ -29,6 +34,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LayeredCauldronBlock;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
+import org.jspecify.annotations.Nullable;
 
 import java.util.HashSet;
 import java.util.List;
@@ -126,6 +132,132 @@ public final class DyeingTests {
 		fx.reload();
 		assertThat(crafted(helper, fx, player.getInventory().getItem(2), new ItemStack(Items.DYE.red())).isEmpty(), "a Dormant hat took the dye");
 		helper.succeed();
+	}
+
+	/**
+	 * With moredyes, its colours dye a Dyeable Hat on a diamond helmet exactly as they dye leather
+	 * through moredyes' own recipe: Cerise alone gives Cerise, and mixed with a vanilla dye, or over an
+	 * old colour, it mixes as on leather. The hat keeps its skin, live.
+	 */
+	@GameTest
+	public void aMoredyesColourDyesADiamondDyeableHat(GameTestHelper helper) {
+		SkinFixtures fx = SkinFixtures.create().dyeableHat("cowboy_hat_test");
+		fx.reload();
+		ServerPlayer player = ApplyTests.carrying(helper, new ItemStack(Items.DIAMOND_HELMET));
+		fx.skins.grant(player.nameAndId(), "cowboy_hat_test");
+		assertThat(fx.skins.apply(player, "cowboy_hat_test", ItemLocation.hotbar(0)).applied(), "the hat wasn't applied");
+		ItemStack hat = player.getInventory().getItem(0);
+
+		ItemStack cerise = crafted(helper, fx, hat, moredyes("cerise_dye"))
+				.orElseThrow(() -> SkinFixtures.fail("Cerise doesn't dye the Dyeable Hat on a diamond helmet"));
+		assertThat(cerise.is(Items.DIAMOND_HELMET) && hat.get(SkinMarker.TYPE).equals(cerise.get(SkinMarker.TYPE)), "dyeing with Cerise made " + cerise);
+		assertThat(fx.skins.liveSkin(cerise).filter(s -> s.id().equals("cowboy_hat_test")).isPresent(), "the Cerise hat isn't live");
+		assertThat(new DyedItemColor(0xEE2A7B).equals(cerise.get(DataComponents.DYED_COLOR)), "the Cerise hat's colour: " + cerise.get(DataComponents.DYED_COLOR));
+
+		// Mixed with a vanilla dye, and over an old colour, as moredyes mixes them on leather.
+		DyedItemColor leatherMix = crafted(helper, fx, new ItemStack(Items.LEATHER_HELMET), moredyes("cerise_dye"), new ItemStack(Items.DYE.yellow()))
+				.orElseThrow().get(DataComponents.DYED_COLOR);
+		DyedItemColor hatMix = crafted(helper, fx, hat, moredyes("cerise_dye"), new ItemStack(Items.DYE.yellow()))
+				.orElseThrow(() -> SkinFixtures.fail("Cerise and yellow don't dye the hat")).get(DataComponents.DYED_COLOR);
+		assertThat(leatherMix != null && leatherMix.equals(hatMix), "Cerise and yellow gave " + hatMix + ", not " + leatherMix);
+		ItemStack redLeather = crafted(helper, fx, new ItemStack(Items.LEATHER_HELMET), new ItemStack(Items.DYE.red())).orElseThrow();
+		DyedItemColor leatherOver = crafted(helper, fx, redLeather, moredyes("laserviolet_dye")).orElseThrow().get(DataComponents.DYED_COLOR);
+		ItemStack redHat = crafted(helper, fx, hat, new ItemStack(Items.DYE.red())).orElseThrow();
+		DyedItemColor hatOver = crafted(helper, fx, redHat, moredyes("laserviolet_dye")).orElseThrow().get(DataComponents.DYED_COLOR);
+		assertThat(leatherOver != null && leatherOver.equals(hatOver), "Laserviolet over red gave " + hatOver + ", not " + leatherOver);
+		helper.succeed();
+	}
+
+	/**
+	 * An animated moredyes colour (RGB) dyes a diamond Dyeable Hat as it dyes leather: alone in the
+	 * grid, it overwrites the old colour with its own and marks the hat with moredyes'
+	 * {@code animated_dye}, which moredyes animates for each viewer. Beside another dye it makes
+	 * nothing. A vanilla dye on the animated hat starts from that dye alone and takes the mark off.
+	 */
+	@GameTest
+	public void anAnimatedMoredyesColourMarksADiamondDyeableHatAnimated(GameTestHelper helper) {
+		SkinFixtures fx = SkinFixtures.create().dyeableHat("cowboy_hat_test");
+		fx.reload();
+		ServerPlayer player = ApplyTests.carrying(helper, new ItemStack(Items.DIAMOND_HELMET));
+		fx.skins.grant(player.nameAndId(), "cowboy_hat_test");
+		assertThat(fx.skins.apply(player, "cowboy_hat_test", ItemLocation.hotbar(0)).applied(), "the hat wasn't applied");
+		ItemStack hat = player.getInventory().getItem(0);
+		ItemStack redHat = crafted(helper, fx, hat, new ItemStack(Items.DYE.red())).orElseThrow();
+
+		ItemStack rgb = crafted(helper, fx, redHat, moredyes("rgb_dye"))
+				.orElseThrow(() -> SkinFixtures.fail("RGB doesn't dye the Dyeable Hat on a diamond helmet"));
+		assertThat(fx.skins.liveSkin(rgb).filter(s -> s.id().equals("cowboy_hat_test")).isPresent(), "the RGB hat isn't live");
+		// RGB's static colour, the red not mixed in, and the mark.
+		assertThat(new DyedItemColor(0xFF4040).equals(rgb.get(DataComponents.DYED_COLOR)), "the RGB hat's colour: " + rgb.get(DataComponents.DYED_COLOR));
+		assertThat("rgb".equals(animatedDye(rgb)), "the RGB hat is marked " + animatedDye(rgb));
+		assertThat(crafted(helper, fx, hat, moredyes("rgb_dye"), new ItemStack(Items.DYE.red())).isEmpty(), "RGB was mixed with red");
+		assertThat(crafted(helper, fx, hat, moredyes("rgb_dye"), moredyes("cerise_dye")).isEmpty(), "RGB was mixed with Cerise");
+
+		ItemStack blue = crafted(helper, fx, rgb, new ItemStack(Items.DYE.blue()))
+				.orElseThrow(() -> SkinFixtures.fail("a vanilla dye doesn't dye the RGB hat"));
+		ItemStack plainBlue = crafted(helper, fx, new ItemStack(Items.LEATHER_HELMET), new ItemStack(Items.DYE.blue())).orElseThrow();
+		assertThat(plainBlue.get(DataComponents.DYED_COLOR).equals(blue.get(DataComponents.DYED_COLOR)), "blue on the RGB hat gave " + blue.get(DataComponents.DYED_COLOR));
+		assertThat(animatedDye(blue) == null, "the blue hat is still marked " + animatedDye(blue));
+		helper.succeed();
+	}
+
+	/**
+	 * moredyes sends a marked helmet's animated colour from its own Polymer callback, and so may run
+	 * after this mod has drawn the item. The drawing check has the last word all the same: a diamond
+	 * RGB hat drawn plain (with no one) is sent with no colour and no "Dyed" line, while in its Owner's
+	 * inventory it's sent with its Look and moredyes' animated colour.
+	 */
+	@GameTest
+	public void moredyesCantColourADiamondHatDrawnPlain(GameTestHelper helper) {
+		SkinFixtures fx = SkinFixtures.create().dyeableHat("cowboy_hat_test");
+		fx.reload();
+		ServerPlayer owner = ApplyTests.carrying(helper, new ItemStack(Items.DIAMOND_HELMET));
+		fx.skins.grant(owner.nameAndId(), "cowboy_hat_test");
+		assertThat(fx.skins.apply(owner, "cowboy_hat_test", ItemLocation.hotbar(0)).applied(), "the hat wasn't applied");
+		ItemStack rgb = crafted(helper, fx, owner.getInventory().getItem(0), moredyes("rgb_dye")).orElseThrow();
+		owner.getInventory().setItem(0, rgb);
+
+		ItemStack plain = sent(helper, fx, owner, null, rgb);
+		assertThat(!plain.has(DataComponents.DYED_COLOR) && !hasDyedLine(plain), "the RGB hat with no one is sent as " + plain.getComponents());
+		ItemStack working = sent(helper, fx, owner, new ClientboundSetPlayerInventoryPacket(0, rgb), rgb);
+		assertThat("skins:cowboy_hat_test".equals(String.valueOf(working.get(DataComponents.ITEM_MODEL))), "its Owner sees " + working.get(DataComponents.ITEM_MODEL));
+		// moredyes' animated colour: never RGB's static one, since every frame it moves through has a 0x33 channel.
+		DyedItemColor animated = working.get(DataComponents.DYED_COLOR);
+		assertThat(animated != null && animated.rgb() != 0xFF4040 && hasDyedLine(working), "its Owner's RGB hat is sent as " + working.getComponents());
+		helper.succeed();
+	}
+
+	/**
+	 * What {@code viewer} is sent of {@code stack} inside {@code packet} (null: none), through every
+	 * Polymer callback in their real order, the server's drawing check with the test's Skins among
+	 * them. The server's Skins is swapped for the test's only within this call, on the server thread.
+	 */
+	private static ItemStack sent(GameTestHelper helper, SkinFixtures fx, ServerPlayer viewer, @Nullable Packet<?> packet, ItemStack stack) {
+		Skins previous = MetacraftSkins.use(fx.skins);
+		try {
+			ScopedValue.CallableOp<ItemStack, RuntimeException> copy = () -> PolymerItemUtils.getPolymerItemStack(stack,
+					viewer.connection.getPacketContext(), helper.getLevel().registryAccess());
+			return packet == null ? copy.call() : ScopedValue.where(DrawingCheck.PACKET, packet).call(copy);
+		} finally {
+			MetacraftSkins.use(previous);
+		}
+	}
+
+	/** One of moredyes' items, by id (only {@code compat/moredyes} names moredyes' types). */
+	private static ItemStack moredyes(String item) {
+		Identifier id = Identifier.fromNamespaceAndPath("moredyes", item);
+		assertThat(BuiltInRegistries.ITEM.containsKey(id), "moredyes isn't on the test runtime: no " + id);
+		return new ItemStack(BuiltInRegistries.ITEM.getValue(id));
+	}
+
+	/**
+	 * moredyes' mark on armour dyed an animated colour (the colour's id), or null. Looked up each time:
+	 * the test classes load before moredyes registers it.
+	 */
+	private static @Nullable Object animatedDye(ItemStack stack) {
+		DataComponentType<?> mark = BuiltInRegistries.DATA_COMPONENT_TYPE.getValue(Identifier.fromNamespaceAndPath("moredyes", "animated_dye"));
+		assertThat(mark != null, "moredyes isn't on the test runtime: no animated_dye");
+		return stack.get(mark);
 	}
 
 	/**

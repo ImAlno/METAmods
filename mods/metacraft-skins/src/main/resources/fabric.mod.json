@@ -47,6 +47,7 @@
 		"polymer-resource-pack": "*"
 	},
 	"suggests": {
-		"metacraft-resource-packs": "*"
+		"metacraft-resource-packs": "*",
+		"moredyes": "*"
 	}
 }

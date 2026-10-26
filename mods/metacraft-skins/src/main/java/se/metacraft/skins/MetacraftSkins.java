@@ -6,6 +6,7 @@ import se.metacraft.skins.pack.PackDelivery;
 import se.metacraft.skins.ui.ClaimMenu;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
+import net.fabricmc.fabric.api.event.Event;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
@@ -15,6 +16,7 @@ import net.fabricmc.fabric.api.event.player.UseItemCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -43,8 +45,12 @@ public final class MetacraftSkins implements ModInitializer {
 		SkinToken.init();
 		DyeSkinnedItemRecipe.init();
 		// Every stack carrying the (Polymer-hidden) marker, vanilla items included, is rebuilt for
-		// each viewer by Polymer; the live skin's Look and tooltip block go on that copy only.
-		PolymerItemUtils.ITEM_MODIFICATION_EVENT.register((original, client, context) -> {
+		// each viewer by Polymer; the live skin's Look and tooltip block go on that copy only. It runs
+		// after every other mod's callback in the default phase (moredyes sets an animated colour from
+		// its own), so a colour the drawing check takes off a copy stays off.
+		Identifier drawing = Identifier.fromNamespaceAndPath(MOD_ID, "drawing_check");
+		PolymerItemUtils.ITEM_MODIFICATION_EVENT.addPhaseOrdering(Event.DEFAULT_PHASE, drawing);
+		PolymerItemUtils.ITEM_MODIFICATION_EVENT.register(drawing, (original, client, context) -> {
 			Skins current = skins;
 			return current == null ? client : DrawingCheck.draw(current, original, client, context);
 		});

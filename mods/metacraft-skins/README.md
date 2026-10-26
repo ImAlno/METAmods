@@ -35,6 +35,9 @@ module. Two mods are optional, and used when present:
 - **metacraft-resource-packs:** the skins pack is a pack of its own, served by that mod and sent at join
   with the server's other packs, so adding a skin never changes the main pack's hash. Without it the
   skins' files go into the Polymer pack.
+- **moredyes:** its colours (Cerise, Laserviolet, the animated RGB and the rest) dye a Dyeable Hat on any
+  helmet, as they dye leather (**Dyeable Hats** in [Writing a skin](#writing-a-skin)). Without it, only
+  vanilla's dyes do.
 
 The mod adds one mixin, on the packet encoder (`PacketEncoder.encode`), so it can tell where an item
 is drawn: in its Owner's inventory, on their head, in a chest, on the ground. The pack is required
@@ -160,14 +163,17 @@ that should take the colour (the felt of a hat, say, but not its band), then set
 - players dye it as they dye leather armour, on any helmet the skin fits (leather, chainmail, copper,
   iron, golden, diamond, netherite or a turtle shell): the helmet and dyes in the crafting grid, mixed as
   vanilla mixes them. A water cauldron washes the colour off. The helmet keeps the skin throughout. A
-  plain helmet other than leather still refuses dye.
+  plain helmet other than leather still refuses dye;
+- with moredyes installed, its colours dye the hat on any of those helmets exactly as they dye leather:
+  mixed with each other and with vanilla's dyes, and an animated colour (RGB) on its own in the grid,
+  replacing the old colour, and then animated on the hat.
 
-Leather uses vanilla's dye recipe. Every other helmet uses the mod's own special recipe,
-`metacraft-skins:dye_skinned_item`, which takes only a helmet carrying a live Dyeable Hat (working or
-Away), never a plain one, a skin that isn't dyeable or a Dormant hat. For washing, the mod adds the seven
-other vanilla helmets to `#minecraft:cauldron_can_remove_dye` (by name, so another mod's helmets keep
-their own cauldron behaviour). A modded helmet carrying a Dyeable Hat with no `materials` dyes, but
-washes only if its own mod adds it to that tag.
+Leather uses vanilla's dye recipe (and moredyes' own for its colours). Every other helmet uses the mod's
+own special recipe, `metacraft-skins:dye_skinned_item`, which takes only a helmet carrying a live
+Dyeable Hat (working or Away), never a plain one, a skin that isn't dyeable or a Dormant hat. For
+washing, the mod adds the seven other vanilla helmets to `#minecraft:cauldron_can_remove_dye` (by name,
+so another mod's helmets keep their own cauldron behaviour). A modded helmet carrying a Dyeable Hat with
+no `materials` dyes, but washes only if its own mod adds it to that tag.
 
 A helmet other than leather keeps a colour only while it carries a Dyeable Hat. When the hat leaves it
 (removed, moved to another item, revoked, overwritten by a skin that isn't dyeable, or `dyeable` turned
@@ -524,6 +530,6 @@ JAVA_TOOL_OPTIONS="-Dfabric-api.gametest=true" ./gradlew :mods:metacraft-skins:r
 
 All the rules live in one class, `Skins`, which reads and writes only under the root it's given, so each
 game test points it at a temporary folder with fixture skins. Commands (`command/`), menus (`ui/`), the
-token item, the pack delivery (`pack/`, `compat/resource_packs/`) and the event listeners (`MetacraftSkins`) are thin adapters around it. The game tests
+token item, the pack delivery (`pack/`, `compat/resource_packs/`), moredyes' colours (`compat/moredyes/`) and the event listeners (`MetacraftSkins`) are thin adapters around it. The game tests
 are in `gametest/`, registered under `fabric-gametest` in `fabric.mod.json`. Test skin ids end in `_test`, so they never
 collide with the test server's own skins (the example skins it installs on its first start).
