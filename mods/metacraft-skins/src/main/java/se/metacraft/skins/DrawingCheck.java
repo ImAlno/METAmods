@@ -18,7 +18,14 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.CartographyTableMenu;
+import net.minecraft.world.inventory.CraftingMenu;
+import net.minecraft.world.inventory.EnchantmentMenu;
+import net.minecraft.world.inventory.GrindstoneMenu;
 import net.minecraft.world.inventory.InventoryMenu;
+import net.minecraft.world.inventory.ItemCombinerMenu;
+import net.minecraft.world.inventory.LoomMenu;
+import net.minecraft.world.inventory.StonecutterMenu;
 import net.minecraft.world.item.ItemStack;
 import org.jspecify.annotations.Nullable;
 
@@ -31,15 +38,24 @@ import java.util.UUID;
  * {@link Skins#clientView}. The callback only knows who is looking; while it runs, the packet being
  * written (bound in {@link #PACKET} by the mod's mixin on the packet encoder) also tells who the
  * item is with. That's the player whose inventory, worn armour, offhand, cursor or ender chest the
- * packet's own (top-level) stack is in. Anything else, including an item inside a bundle or shulker
- * box, an item entity, a frame, an armour stand, a chest's slots and an encode with no packet bound
- * (Polymer's slot hashing), is with no one: unknown means plain. After a reload that took a Look
- * away, {@link #redrawEveryone} sends every online player's items again, tagged so this check
- * reads them right.
+ * packet's own (top-level) stack is in, or the Owner using the workstation it's in. Anything else,
+ * including an item inside a bundle or shulker box, an item entity, a frame, an armour stand, a
+ * chest's slots and an encode with no packet bound, is with no one: unknown means plain. Polymer's
+ * slot hashing (the server comparing a slot with the client's hash of it after a click) writes no
+ * packet; the mod's menu mixin binds the slot in {@link #COMPARED} instead, and it's drawn as the
+ * packet sending it would draw it. After a reload that took a Look away, {@link #redrawEveryone}
+ * sends every online player's items again, tagged so this check reads them right.
  */
 public final class DrawingCheck {
 	/** The packet being encoded for a client, for the duration of the encode. */
 	public static final ScopedValue<Packet<?>> PACKET = ScopedValue.newInstance();
+	/** The slot of a player's menu whose item the server is comparing with the client's hash of it, for the duration of the comparison. */
+	public static final ScopedValue<MenuSlot> COMPARED = ScopedValue.newInstance();
+
+	/** Slot {@code index} of {@code menu}, or its cursor ({@link #CURSOR}). */
+	public record MenuSlot(AbstractContainerMenu menu, int index) {
+		public static final int CURSOR = -1;
+	}
 
 	private DrawingCheck() {}
 
@@ -69,10 +85,11 @@ public final class DrawingCheck {
 		}
 	}
 
-	/** Who {@code original}, a Skinned Item being encoded for {@code viewer}, is with, if anyone; read from the packet being written. */
+	/** Who {@code original}, a Skinned Item being encoded for {@code viewer}, is with, if anyone; read from the packet being written, or the menu slot being compared. */
 	static @Nullable UUID with(ItemStack original, @Nullable ServerPlayer viewer) {
 		SkinMarker marker = original.get(SkinMarker.TYPE);
-		if (marker == null || viewer == null || !PACKET.isBound()) return null;
+		if (marker == null || viewer == null) return null;
+		if (!PACKET.isBound()) return COMPARED.isBound() ? compared(viewer, marker, original, COMPARED.get()) : null;
 		Packet<?> packet = PACKET.get();
 		// Equipment and entity data: Polymer ties them to their entity. Only a player carries anything.
 		Entity entity = PolymerEntityUtils.getEntityContext(packet);
@@ -99,19 +116,46 @@ public final class DrawingCheck {
 		};
 	}
 
-	/**
-	 * Slot {@code slot} of the viewer's menu {@code containerId}: their inventory menu is all theirs,
-	 * 2×2 grid included. In another menu, only for the Owner, and only their inventory and ender chest slots.
-	 */
+	/** The item in {@code at}, one of the viewer's own menus, being compared with their client's hash of it: with whom it'd be sent. */
+	private static @Nullable UUID compared(ServerPlayer viewer, SkinMarker marker, ItemStack original, MenuSlot at) {
+		AbstractContainerMenu menu = at.menu();
+		if (at.index() == MenuSlot.CURSOR) return menu.getCarried() == original ? viewer.getUUID() : null;
+		return menu.getSlot(at.index()).getItem() == original ? inMenu(viewer, marker, menu, at.index()) : null;
+	}
+
+	/** Slot {@code slot} of the viewer's menu {@code containerId}, if it's the one they have open (or their inventory). */
 	private static @Nullable UUID inMenu(ServerPlayer viewer, SkinMarker marker, int containerId, int slot) {
 		if (slot < 0) return null;
 		if (containerId == InventoryMenu.CONTAINER_ID) return viewer.getUUID();
-		if (!viewer.getUUID().equals(marker.owner())) return null;
 		// Read from the network thread: a menu's slots never change, and a replaced menu has another id.
 		AbstractContainerMenu menu = viewer.containerMenu;
-		if (menu.containerId != containerId || slot >= menu.slots.size()) return null;
+		return menu.containerId == containerId ? inMenu(viewer, marker, menu, slot) : null;
+	}
+
+	/**
+	 * Slot {@code slot} of {@code menu}, one of the viewer's: their inventory menu is all theirs, 2×2
+	 * grid included. In another menu, only for the Owner: every slot of a {@linkplain #workstation
+	 * workstation}, result included, and elsewhere only their inventory and ender chest slots.
+	 */
+	private static @Nullable UUID inMenu(ServerPlayer viewer, SkinMarker marker, AbstractContainerMenu menu, int slot) {
+		if (menu == viewer.inventoryMenu) return viewer.getUUID();
+		if (!viewer.getUUID().equals(marker.owner()) || slot >= menu.slots.size()) return null;
+		if (workstation(menu)) return viewer.getUUID();
 		Container container = menu.getSlot(slot).container;
 		return container == viewer.getInventory() || container == viewer.getEnderChestInventory() ? viewer.getUUID() : null;
+	}
+
+	/**
+	 * A workstation's menu: the crafting table, the smithing table and anvil ({@link ItemCombinerMenu}),
+	 * the grindstone, enchanting table, stonecutter, loom or cartography table. Its slots aren't storage: when it closes, it gives what's
+	 * in them back to the player (each one's {@code removed} calls {@code clearContainer}, as only the
+	 * inventory menu does besides), so an item in them is still with that player. Storage menus
+	 * (chests, barrels, shulker boxes, hoppers, furnaces, crafters, brewing stands, dispensers) keep
+	 * their items, which are Away.
+	 */
+	private static boolean workstation(AbstractContainerMenu menu) {
+		return menu instanceof CraftingMenu || menu instanceof ItemCombinerMenu || menu instanceof GrindstoneMenu || menu instanceof EnchantmentMenu
+				|| menu instanceof StonecutterMenu || menu instanceof LoomMenu || menu instanceof CartographyTableMenu;
 	}
 
 	private static int indexOf(List<ItemStack> items, ItemStack stack) {

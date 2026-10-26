@@ -39,8 +39,9 @@ module. Two mods are optional, and used when present:
   helmet, as they dye leather (**Dyeable Hats** in [Writing a skin](#writing-a-skin)). Without it, only
   vanilla's dyes do.
 
-The mod adds one mixin, on the packet encoder (`PacketEncoder.encode`), so it can tell where an item
-is drawn: in its Owner's inventory, on their head, in a chest, on the ground. The pack is required
+The mod adds two mixins, on the packet encoder (`PacketEncoder.encode`) and on menus' slot syncing
+(`AbstractContainerMenu`), so it can tell where an item is drawn: in its Owner's inventory, on their
+head, in a chest, on the ground. The pack is required
 exactly when the server's packs are.
 
 ## Files
@@ -494,13 +495,17 @@ Rules that answer most support questions:
   plain from the moment they join.
 - **Only with its Owner.** A Skinned Item shows its Look and gives Perks only while it's with its
   Owner: in their inventory or hotbar, worn, in their offhand, on their cursor or in their ender chest.
-  Everyone who sees the Owner sees the hat on their head and the sword in their hand. Anywhere else the
-  item is **Away**: lent to another player, in a chest, barrel or shulker box, dropped, in an item frame,
-  on an armour stand, inside a bundle or shulker box item (even one the Owner carries), or in the slots
-  of a crafting table, smithing table, anvil or other workstation (the inventory's own 2×2 grid counts as
-  with them). An Away item keeps its skin, and `/skins info` and the Skin Menu still say Applied. It's
-  drawn plain and does nothing until it's back with its Owner; then it works again at once, with no old
-  Look left on anyone's screen.
+  Everyone who sees the Owner sees the hat on their head and the sword in their hand. A workstation the
+  Owner is using counts as with them too, because its slots aren't storage (what's in them goes back to
+  the player when they close it): the crafting table, smithing table, anvil, grindstone, enchanting
+  table, stonecutter, loom and cartography table. The item keeps its Look in the input slots and in the
+  result slot, unless the result no longer fits the skin (a diamond-only skin's netherite upgrade shows
+  plain). The inventory's own 2×2 grid counts as with them as well. Anywhere else the item is **Away**:
+  lent to another player, in a chest, barrel, shulker box, hopper, furnace, crafter, brewing stand,
+  dispenser or other storage, dropped, in an item frame, on an armour stand, or inside a bundle or
+  shulker box item (even one the Owner carries). An Away item keeps its skin, and `/skins info` and the
+  Skin Menu still say Applied. It's drawn plain and does nothing until it's back with its Owner; then it
+  works again at once, with no old Look left on anyone's screen.
 - **Duplicated copies** (a creative clone, a dupe) all carry the skin until the Owner moves or removes it;
   then only the new item does.
 - **Overwritten skins never come back.** Applying over someone else's skin, an Away one included (a

@@ -31,7 +31,8 @@
 			"se.metacraft.skins.gametest.RevertTests",
 			"se.metacraft.skins.gametest.PerkTests",
 			"se.metacraft.skins.gametest.EventPerkTests",
-			"se.metacraft.skins.gametest.DyeingTests"
+			"se.metacraft.skins.gametest.DyeingTests",
+			"se.metacraft.skins.gametest.ClickTests"
 		]
 	},
 	"mixins": [
