@@ -48,7 +48,8 @@ public abstract class BaseFireBlockMixin {
 			boolean blocked = PortalBlockerSettings.getInstance(serverLevel.getServer()).isPortalBlocked(
 					PortalTypeRegistry.NETHER, serverLevel.dimension(), PortalState.BlockingType.ACTIVATION, positions
 			);
-			if (RiftForming.tryForm(serverLevel, positions, s.netherRifts$axis(), RiftShape.FrameTest.of(PortalShape.FRAME), blocked)) {
+			Direction.Axis axis = bottomLeft != null ? s.netherRifts$axis() : ConfnPortalCompat.getDirection(shape);
+			if (RiftForming.tryForm(serverLevel, positions, axis, RiftShape.FrameTest.of(PortalShape.FRAME), blocked)) {
 				return;
 			}
 		}
