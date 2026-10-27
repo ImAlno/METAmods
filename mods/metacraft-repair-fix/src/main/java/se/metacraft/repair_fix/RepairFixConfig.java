@@ -32,7 +32,8 @@ public final class RepairFixConfig {
 			instance -> instance.group(
 					ExtraCodecs.NON_NEGATIVE_INT.optionalFieldOf("max_repair_cost").forGetter(c -> c.maxRepairConst),
 					Codec.BOOL.fieldOf("cap_at_max_level").forGetter(c -> c.capAtMaxLevel),
-					BaseCostIncreaseMode.CODEC.fieldOf("base_cost_increase_mode").forGetter(c -> c.baseCostIncreaseMode)
+					BaseCostIncreaseMode.CODEC.fieldOf("base_cost_increase_mode").forGetter(c -> c.baseCostIncreaseMode),
+					Codec.BOOL.fieldOf("cheap_renaming").orElse(true).forGetter(c -> c.cheapRenaming)
 			).apply(instance, RepairFixConfig::new)
 	);
 
@@ -57,14 +58,16 @@ public final class RepairFixConfig {
 	private final boolean capAtMaxLevel;
 
 	private BaseCostIncreaseMode baseCostIncreaseMode = BaseCostIncreaseMode.ENCHANTING_ONLY;
+	private boolean cheapRenaming;
 
 	public RepairFixConfig(
 			Optional<Integer> maxRepairConst, boolean capAtMaxLevel,
-			BaseCostIncreaseMode baseCostIncreaseMode
+			BaseCostIncreaseMode baseCostIncreaseMode, boolean cheapRenaming
 	) {
 		this.maxRepairConst = maxRepairConst;
 		this.capAtMaxLevel = capAtMaxLevel;
 		this.baseCostIncreaseMode = baseCostIncreaseMode;
+		this.cheapRenaming = cheapRenaming;
 	}
 
 	public boolean capAtMaxLevel() {
@@ -79,10 +82,14 @@ public final class RepairFixConfig {
 		return baseCostIncreaseMode;
 	}
 
+	public boolean cheapRenaming() {
+		return cheapRenaming;
+	}
+
 	private static RepairFixConfig createDefault() {
 		return new RepairFixConfig(
 				Optional.of(40), true,
-				BaseCostIncreaseMode.ENCHANTING_ONLY
+				BaseCostIncreaseMode.ENCHANTING_ONLY, true
 		);
 	}
 

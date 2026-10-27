@@ -181,6 +181,49 @@ public abstract class AnvilMenuMixin extends ItemCombinerMenu {
 		isAddingEnchantment.set(true);
 	}
 
+	@Inject(
+		method = "createResult",
+		at = {
+			@At(
+				value = "INVOKE",
+				target = "Lnet/minecraft/world/item/ItemStack;getMaxDamage()I",
+				ordinal = 0
+			),
+			@At(
+				value = "INVOKE",
+				target = "Lnet/minecraft/world/item/ItemStack;getMaxDamage()I",
+				ordinal = 2
+			)
+		}
+	)
+	public void setRepairing(
+		CallbackInfo info, @Share("isRepairing") LocalBooleanRef isRepairing
+	) {
+		isRepairing.set(true);
+	}
+
+	@ModifyVariable(
+		method = "createResult",
+		at = @At(
+			value = "FIELD",
+			target = "Lnet/minecraft/world/inventory/AnvilMenu;itemName:Ljava/lang/String;",
+			ordinal = 0,
+			opcode = Opcodes.GETFIELD
+		),
+		name = "tax"
+	)
+	public long modifyTax(
+		long tax, @Share("isRepairing") LocalBooleanRef isRepairing,
+		@Share("isAddingEnchantment") LocalBooleanRef isAddingEnchantment
+	) {
+		if (RepairFixConfig.getConfig().cheapRenaming() && !isRepairing.get() && !isAddingEnchantment.get()) {
+			this.cost.set(42); // This is to force the client to update the number.
+			this.broadcastChanges();
+			return 0;
+		}
+		return tax;
+	}
+
 	@WrapOperation(
 		method = "createResult",
 		at = @At(
