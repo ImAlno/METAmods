@@ -44,6 +44,7 @@ import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
 
 import java.net.URI;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -65,8 +66,9 @@ import java.util.stream.Stream;
  *   <li>{@code stands <chapter>} — three posed stands wearing a plain ovve, for testing the sewing aim;</li>
  *   <li>{@code minigame [on|off] [stitches]} — the stitching minigame setting, saved to config/ovvar.json;</li>
  *   <li>{@code aimlog on|off} — log every click on a stand and every aim change with the numbers behind it (server log);</li>
- *   <li>{@code store status|show [player]|reload [player]|reconnect} — the wardrobe store: what it is and
- *	   what is cached, one player's designs and stash, drop and refetch them, or reopen the backend from the config;</li>
+ *   <li>{@code store status|show [player]|reload [player]|reconnect|import [directory]} — the wardrobe store: what it is and
+ *	   what is cached, one player's designs and stash, drop and refetch them, reopen the backend from the config, or
+ *	   copy a file backend's wardrobes (by default {@code <world>/ovvar/wardrobes}) into it, merging with what it holds;</li>
  *   <li>{@code patch give <targets> <patch> [count]} — a patch into the stash of every selected player (vanilla
  *	   selectors), with the flourish and the explanation each.</li>
  * </ul>
@@ -175,7 +177,11 @@ public final class ModCommands {
 										.executes(ctx -> storeReload(ctx, ctx.getSource().getPlayerOrException()))
 										.then(Commands.argument("player", EntityArgument.player())
 												.executes(ctx -> storeReload(ctx, EntityArgument.getPlayer(ctx, "player")))))
-								.then(Commands.literal("reconnect").executes(ModCommands::storeReconnect)))));
+								.then(Commands.literal("reconnect").executes(ModCommands::storeReconnect))
+								.then(Commands.literal("import")
+										.executes(ctx -> storeImport(ctx, Wardrobes.defaultFileDirectory(ctx.getSource().getServer())))
+										.then(Commands.argument("directory", StringArgumentType.greedyString())
+												.executes(ctx -> storeImport(ctx, Path.of(StringArgumentType.getString(ctx, "directory")))))))));
 	}
 
 	private static com.mojang.brigadier.builder.RequiredArgumentBuilder<CommandSourceStack, String> chapterArg() {
@@ -564,6 +570,13 @@ public final class ModCommands {
 		Wardrobes.open(ctx.getSource().getServer(), OvvarConfig.get().designs());
 		for (ServerPlayer online : ctx.getSource().getServer().getPlayerList().getPlayers()) Wardrobes.fetch(online.getUUID());
 		ctx.getSource().sendSuccess(() -> Component.literal(Wardrobes.status()), true);
+		return 1;
+	}
+
+	private static int storeImport(CommandContext<CommandSourceStack> ctx, Path dir) {
+		CommandSourceStack source = ctx.getSource();
+		source.sendSuccess(() -> Component.literal("Importing wardrobes from " + dir.toAbsolutePath() + "…"), true);
+		Wardrobes.importFrom(dir, line -> source.sendSuccess(() -> Component.literal(line), true));
 		return 1;
 	}
 

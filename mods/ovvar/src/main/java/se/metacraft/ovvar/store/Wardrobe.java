@@ -123,6 +123,22 @@ public record Wardrobe(Map<Chapter, SpotPlacements> designs, Map<String, Integer
 		return Optional.of(withDesign(chapter, rest).add(there.get().patch(), 1));
 	}
 
+	/**
+	 * {@code other}'s patches added to these (importing a wardrobe kept elsewhere): stash counts are
+	 * summed, and a chapter both have a design for takes {@code other}'s, this one's patches going back
+	 * to the stash. No patch is lost or made; the version stays this one's.
+	 */
+	public Wardrobe absorb(Wardrobe other) {
+		Map<String, Integer> outStash = new TreeMap<>(stash);
+		other.stash.forEach((id, n) -> outStash.merge(id, n, Integer::sum));
+		Map<Chapter, SpotPlacements> outDesigns = new TreeMap<>(designs);
+		other.designs.forEach((chapter, placements) -> {
+			SpotPlacements displaced = outDesigns.put(chapter, placements);
+			if (displaced != null) for (Placement p : displaced.asPlacementList()) outStash.merge(p.patch().id(), 1, Integer::sum);
+		});
+		return new Wardrobe(outDesigns, outStash, version);
+	}
+
 	// ---- housekeeping
 
 	public boolean isEmpty() {

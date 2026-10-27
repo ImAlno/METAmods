@@ -12,8 +12,11 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 /**
  * Wardrobes as files: {@code <dir>/<owner uuid>.json}. The default store — the world's own
@@ -64,6 +67,34 @@ public final class FileBackend implements WardrobeBackend {
 			Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING);
 		}
 		return true;
+	}
+
+	public Path dir() {
+		return dir;
+	}
+
+	/** Every owner with a file here, in no particular order. */
+	public List<UUID> owners() throws IOException {
+		if (!Files.isDirectory(dir)) return List.of();
+		List<UUID> out = new ArrayList<>();
+		try (Stream<Path> files = Files.list(dir)) {
+			for (Path path : (Iterable<Path>) files::iterator) {
+				String name = path.getFileName().toString();
+				if (!name.endsWith(".json")) continue;
+				try {
+					out.add(UUID.fromString(name.substring(0, name.length() - ".json".length())));
+				} catch (IllegalArgumentException ignored) {
+					// not a wardrobe
+				}
+			}
+		}
+		return out;
+	}
+
+	/** Moves an owner's file aside as {@code <uuid>.json.imported}, so a second import skips it. */
+	public void markImported(UUID owner) throws IOException {
+		Path path = file(owner);
+		if (Files.exists(path)) Files.move(path, path.resolveSibling(path.getFileName() + ".imported"), StandardCopyOption.REPLACE_EXISTING);
 	}
 
 	@Override

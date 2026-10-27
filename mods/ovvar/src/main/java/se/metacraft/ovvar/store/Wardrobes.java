@@ -78,9 +78,7 @@ public final class Wardrobes {
 	/** Opens the backend the config names. The store thread is created here. */
 	public static void open(MinecraftServer s, DesignStoreConfig config) {
 		use(s, switch (config.backend()) {
-			case FILE -> new FileBackend(config.fileDirectory().isEmpty()
-					? s.getWorldPath(LevelResource.ROOT).resolve("ovvar").resolve("wardrobes")
-					: Path.of(config.fileDirectory()));
+			case FILE -> new FileBackend(config.fileDirectory().isEmpty() ? defaultFileDirectory(s) : Path.of(config.fileDirectory()));
 			case JDBC -> new JdbcBackend(config.jdbc());
 		});
 		Ovvar.LOGGER.info("[ovvar] wardrobes: {}", backend.describe());
@@ -315,6 +313,75 @@ public final class Wardrobes {
 			lastFailureLog = now;
 			Ovvar.LOGGER.warn("[ovvar] wardrobes: store unreachable while {}: {}", doing, e.toString());
 		}
+	}
+
+	// ---- importing
+
+	/** The file backend's directory when {@code file_directory} is unset: where an import reads by default. */
+	public static Path defaultFileDirectory(MinecraftServer s) {
+		return s.getWorldPath(LevelResource.ROOT).resolve("ovvar").resolve("wardrobes");
+	}
+
+	/**
+	 * Copies every wardrobe file in {@code dir} into the open store (a server that ran on the file
+	 * backend by mistake). An owner the store has nothing for gets the file as is; one it has a
+	 * wardrobe for gets the file {@link Wardrobe#absorb absorbed} into it. Each imported file is
+	 * renamed {@code .imported}, so running it twice does not count anything twice. {@code report}
+	 * gets one line per owner and a summary, on the server thread.
+	 */
+	public static void importFrom(Path dir, Consumer<String> report) {
+		if (!available()) {
+			report.accept("no store open");
+			return;
+		}
+		if (backend instanceof FileBackend file && file.dir().toAbsolutePath().normalize().equals(dir.toAbsolutePath().normalize())) {
+			report.accept("the store already is " + dir.toAbsolutePath() + "; switch designs.backend to jdbc and reconnect first");
+			return;
+		}
+		WardrobeBackend b = backend;
+		FileBackend source = new FileBackend(dir);
+		executor.submit(() -> {
+			List<String> lines = new ArrayList<>();
+			List<UUID> touched = new ArrayList<>();
+			int imported = 0, merged = 0, failed = 0;
+			try {
+				for (UUID owner : source.owners()) {
+					try {
+						Wardrobe incoming = source.load(owner).orElse(Wardrobe.NONE);
+						boolean ok = false, hadRow = false;
+						for (int attempt = 0; attempt < 5 && !ok; attempt++) {
+							Wardrobe there = b.load(owner).orElse(Wardrobe.NONE);
+							hadRow = !there.isEmpty();
+							Wardrobe next = there.absorb(incoming).withVersion(there.version() + 1);
+							ok = next.sameContents(there) || b.store(owner, next, there.version());
+						}
+						if (!ok) {
+							failed++;
+							lines.add(owner + ": kept changing under the import, left for another run");
+							continue;
+						}
+						source.markImported(owner);
+						touched.add(owner);
+						if (hadRow) merged++;
+						else imported++;
+						lines.add(owner + ": " + (hadRow ? "merged into the existing wardrobe" : "imported") + " ("
+								+ incoming.designs().size() + " design(s), " + incoming.stashSize() + " in the stash)");
+					} catch (IOException | RuntimeException e) {
+						failed++;
+						lines.add(owner + ": failed: " + e.getMessage());
+					}
+				}
+			} catch (IOException | RuntimeException e) {
+				lines.add("could not list " + dir.toAbsolutePath() + ": " + e.getMessage());
+			}
+			lines.add("import from " + dir.toAbsolutePath() + " into " + b.describe() + ": " + imported + " imported, "
+					+ merged + " merged, " + failed + " failed");
+			lines.forEach(line -> Ovvar.LOGGER.info("[ovvar] wardrobes: {}", line));
+			server.execute(() -> {
+				for (UUID owner : touched) if (CACHE.containsKey(owner) || LOADING.contains(owner)) refresh(owner);
+				lines.forEach(report);
+			});
+		});
 	}
 
 	// ---- status

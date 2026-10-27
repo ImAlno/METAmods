@@ -236,6 +236,42 @@ public final class WardrobeTests {
 	}
 
 	@GameTest(maxTicks = 1200)
+	public void importCopiesFilesIntoTheStoreAndMerges(GameTestHelper helper) throws IOException {
+		MinecraftServer server = helper.getLevel().getServer();
+		Path from = Files.createTempDirectory("ovvar-wardrobes-from"), into = Files.createTempDirectory("ovvar-wardrobes-into");
+		FileBackend source = new FileBackend(from), target = new FileBackend(into);
+		UUID fresh = UUID.randomUUID(), existing = UUID.randomUUID();
+		// fresh: only in the files. existing: the store has the Nyckeln sewn on, the file the Itk sewn on plus one stashed.
+		Wardrobe fileFresh = Wardrobe.NONE.add(ITK_PATCH, 1).sew(CHAPTER, ITK).orElseThrow().withVersion(3);
+		Wardrobe fileExisting = Wardrobe.NONE.add(ITK_PATCH, 2).sew(CHAPTER, ITK).orElseThrow().withVersion(2);
+		Wardrobe stored = Wardrobe.NONE.add(NYCKELN_PATCH, 1).sew(CHAPTER, NYCKELN).orElseThrow().withVersion(4);
+		if (!source.store(fresh, fileFresh, 0) || !source.store(existing, fileExisting, 0) || !target.store(existing, stored, 0)) helper.fail("setup write refused");
+		List<String> report = new ArrayList<>();
+		helper.startSequence()
+				.thenWaitUntil(() -> assertThat(BUSY.compareAndSet(false, true), "another store test is running"))
+				.thenExecute(() -> guarded(server, () -> {
+					Wardrobes.use(server, new FileBackend(into));
+					Wardrobes.importFrom(from, report::add);
+				}))
+				.thenWaitUntil(() -> assertThat(report.stream().anyMatch(l -> l.startsWith("import from")), "no summary yet: " + report))
+				.thenExecute(() -> guarded(server, () -> {
+					try {
+						Wardrobe a = target.load(fresh).orElseThrow(), b = target.load(existing).orElseThrow();
+						if (!a.sameContents(fileFresh) || a.version() != 1) helper.fail("fresh not copied as is: " + a);
+						if (!b.at(CHAPTER, Spot.FRONT_TOP_LEFT).map(p -> p.patch() == ITK_PATCH).orElse(false)) helper.fail("the file's design did not win: " + b);
+						if (b.count(ITK_PATCH) != 1 || b.count(NYCKELN_PATCH) != 1 || b.version() != 5) helper.fail("stash not merged: " + b);
+						if (!source.owners().isEmpty()) helper.fail("files not marked imported: " + source.owners());
+						Wardrobes.importFrom(from, report::add);   // a second run finds nothing
+					} catch (IOException e) {
+						throw new GameTestAssertException(Component.literal(e.toString()), 0);
+					}
+				}))
+				.thenWaitUntil(() -> assertThat(report.stream().anyMatch(l -> l.contains("0 imported, 0 merged")), "second run: " + report))
+				.thenExecute(() -> release(server))
+				.thenSucceed();
+	}
+
+	@GameTest(maxTicks = 1200)
 	public void twoOvvesShareOneDesign(GameTestHelper helper) throws IOException {
 		MinecraftServer server = helper.getLevel().getServer();
 		Path dir = Files.createTempDirectory("ovvar-wardrobes");
