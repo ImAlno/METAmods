@@ -1,23 +1,20 @@
 package se.metacraft.skins;
 
 import blue.endless.jankson.Jankson;
-import blue.endless.jankson.JsonElement;
 import blue.endless.jankson.JsonObject;
-import blue.endless.jankson.JsonPrimitive;
 import blue.endless.jankson.api.SyntaxError;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
+import se.metacraft.config.util.JanksonOps;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,7 +23,6 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 /**
  * Reads one skin folder ({@code skins/<id>/}: {@code skin.json5} plus a Blockbench export) into
@@ -36,6 +32,11 @@ import java.util.stream.Collectors;
  * invented). A Dyeable Hat also gets grey copies of its tinted textures ({@link GreyCopies}), a
  * dyed model and an item definition that switches between the two on the helmet's dye. Anything
  * wrong rejects the whole skin with the file at fault and the reason.
+ * <p>
+ * The definition is read by {@link SkinDefinition#CODEC}, but not through metacraft-config's
+ * {@code JanksonHelper}: it logs why a file failed and returns nothing, and that reason is what
+ * {@code /itemskins reload} and {@code /itemskins list} show. The models stay JSON trees edited in
+ * place, as they must keep every field of the export, known to this mod or not.
  * Public only for {@link #NAMESPACE}.
  */
 public final class SkinFolder {
@@ -49,9 +50,6 @@ public final class SkinFolder {
 	private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
 	/** What a resource path segment may hold; ids, model and texture names all become one. */
 	private static final Pattern PATH_SEGMENT = Pattern.compile("[a-z0-9_.-]+");
-	private static final Set<String> FIELDS = Set.of("name", "kind", "look", "description", "perks", "materials");
-	/** Unknown Material names that are vanilla's item-name adjectives for a known one. */
-	private static final Map<String, String> MATERIAL_HINTS = Map.of("wooden", "wood", "golden", "gold");
 	private static final List<String> SPEAR_ICON_CONTEXTS = List.of("gui", "ground", "fixed", "on_shelf");
 	private static final double SPEAR_SWAP_ANIMATION_SCALE = 1.95;
 
@@ -79,8 +77,7 @@ public final class SkinFolder {
 	/** What a definition got as far as naming, for a rejected skin's line in {@code /itemskins list}. */
 	static Optional<Kind> kindIfReadable(Path folder) {
 		try {
-			JsonElement kind = JANKSON.load(Files.readString(folder.resolve(DEFINITION))).get("kind");
-			return kind instanceof JsonPrimitive p && p.getValue() instanceof String s ? Kind.byId(s) : Optional.empty();
+			return Kind.CODEC.fieldOf("kind").codec().parse(JanksonOps.INSTANCE, JANKSON.load(Files.readString(folder.resolve(DEFINITION)))).result();
 		} catch (IOException | SyntaxError | RuntimeException e) {
 			return Optional.empty();
 		}
@@ -94,91 +91,26 @@ public final class SkinFolder {
 		}
 		if (!Files.isRegularFile(definitionFile)) throw new Rejected(definitionFile, "the folder has no " + DEFINITION);
 
-		JsonObject definition;
+		JsonObject json;
 		try {
-			definition = JANKSON.load(Files.readString(definitionFile, StandardCharsets.UTF_8));
+			json = JANKSON.load(Files.readString(definitionFile, StandardCharsets.UTF_8));
 		} catch (SyntaxError e) {
 			throw new Rejected(definitionFile, "broken json5: " + e.getCompleteMessage());
 		} catch (IOException | RuntimeException e) {
 			throw new Rejected(definitionFile, "broken json5: " + e.getMessage());
 		}
-		if (definition == null) throw new Rejected(definitionFile, "broken json5: not an object");
-		for (String key : definition.keySet()) {
-			if (!FIELDS.contains(key)) {
-				throw new Rejected(definitionFile, "unknown field \"" + key + "\" (allowed: " + String.join(", ", FIELDS.stream().sorted().toList()) + ")");
-			}
-		}
-		String name = requiredString(definition, "name", definitionFile);
-		String kindId = requiredString(definition, "kind", definitionFile);
-		Kind kind = Kind.byId(kindId).orElseThrow(() -> new Rejected(definitionFile, "unknown kind \"" + kindId + "\" (one of: "
-				+ Arrays.stream(Kind.values()).map(Kind::id).collect(Collectors.joining(", ")) + ")"));
-		Optional<List<Material>> materials = definition.containsKey("materials")
-				? Optional.of(materials(definition.get("materials"), kind, definitionFile)) : Optional.empty();
-		Optional<String> description = definition.containsKey("description")
-				? Optional.of(requiredString(definition, "description", definitionFile)) : Optional.empty();
-		// A Look-only skin simply leaves "perks" out.
-		List<Perk> perks = definition.containsKey("perks") ? PerkReader.read(definition.get("perks"), kind, definitionFile) : List.of();
-
-		if (!(definition.get("look") instanceof JsonObject look)) throw new Rejected(definitionFile, lookShape(kind) + ", and look is missing or not an object");
-		boolean dyeable = dyeable(look, kind, definitionFile);
-		Set<String> expected = kind.isSpear() ? Set.of("icon", "in_hand") : Set.of("model");
-		Set<String> given = look.keySet().stream().filter(k -> !k.equals("dyeable")).collect(Collectors.toSet());
-		if (!given.equals(expected)) throw new Rejected(definitionFile, lookShape(kind) + ", not look: { " + String.join(", ", look.keySet()) + " }");
+		if (json == null) throw new Rejected(definitionFile, "broken json5: not an object");
+		SkinDefinition definition = SkinDefinition.CODEC.parse(JanksonOps.INSTANCE, json).getOrThrow(reason -> new Rejected(definitionFile, reason));
+		Kind kind = definition.kind();
+		boolean dyeable = definition.look().dyeable();
 
 		Map<String, byte[]> files = new TreeMap<>();
 		Map<String, String> modelIds = new LinkedHashMap<>();
-		for (String slot : kind.isSpear() ? List.of("icon", "in_hand") : List.of("model")) {
-			String file = requiredString(look, slot, definitionFile);
-			modelIds.put(slot, model(folder, id, kind, slot, file, dyeable, definitionFile, files, modelIds, warnings));
+		for (var slot : definition.look().models().entrySet()) {
+			modelIds.put(slot.getKey(), model(folder, id, kind, slot.getKey(), slot.getValue(), dyeable, definitionFile, files, modelIds, warnings));
 		}
 		files.put("assets/" + NAMESPACE + "/items/" + id + ".json", itemDefinition(kind, modelIds).getBytes(StandardCharsets.UTF_8));
-		return new Loaded(id, name, kind, materials, dyeable, description, perks, files);
-	}
-
-	/** {@code look.dyeable}: true or false, and only on a helmet skin; leaving it out is false. */
-	private static boolean dyeable(JsonObject look, Kind kind, Path file) throws Rejected {
-		if (!look.containsKey("dyeable")) return false;
-		if (kind != Kind.HELMET) {
-			throw new Rejected(file, "\"dyeable\" is only for helmet skins (Dyeable Hats), not " + new Fit(kind, Optional.empty()).aOne());
-		}
-		if (look.get("dyeable") instanceof JsonPrimitive p && p.getValue() instanceof Boolean b) return b;
-		throw new Rejected(file, "\"dyeable\" must be true or false");
-	}
-
-	/**
-	 * A skin's {@code materials}: one or more of the Materials its Kind comes in, each once, returned
-	 * in vanilla order. A mace or elytra skin takes none at all.
-	 */
-	private static List<Material> materials(JsonElement element, Kind kind, Path file) throws Rejected {
-		List<Material> allowed = Material.of(kind);
-		if (allowed.isEmpty()) throw new Rejected(file, "the " + kind.id() + " Kind has no materials, so it takes no \"materials\"");
-		String names = allowed.stream().map(Material::id).collect(Collectors.joining(", "));
-		if (!(element instanceof blue.endless.jankson.JsonArray list)) throw new Rejected(file, "\"materials\" must be a list of names (one or more of: " + names + ")");
-		if (list.isEmpty()) throw new Rejected(file, "\"materials\" is empty: leave it out to fit every material, or list some of: " + names);
-		Set<Material> listed = EnumSet.noneOf(Material.class);
-		for (JsonElement entry : list) {
-			if (!(entry instanceof JsonPrimitive p && p.getValue() instanceof String name)) {
-				throw new Rejected(file, "\"materials\" must be a list of names (one or more of: " + names + ")");
-			}
-			Optional<Material> material = Material.byId(name);
-			if (material.isEmpty()) {
-				String hint = MATERIAL_HINTS.containsKey(name) ? "did you mean \"" + MATERIAL_HINTS.get(name) + "\"?" : "one of: " + names;
-				throw new Rejected(file, "unknown material \"" + name + "\" (" + hint + ")");
-			}
-			if (!allowed.contains(material.get())) throw new Rejected(file, "\"" + name + "\" isn't a material of the " + kind.id() + " Kind (it comes in: " + names + ")");
-			if (!listed.add(material.get())) throw new Rejected(file, "\"" + name + "\" is listed twice in \"materials\"");
-		}
-		return allowed.stream().filter(listed::contains).toList();
-	}
-
-	private static String lookShape(Kind kind) {
-		return kind.isSpear() ? "a spear takes look: { icon, in_hand }" : "a " + kind.id() + " takes look: { model }";
-	}
-
-	private static String requiredString(JsonObject object, String key, Path file) throws Rejected {
-		if (!object.containsKey(key)) throw new Rejected(file, "missing field \"" + key + "\"");
-		if (object.get(key) instanceof JsonPrimitive p && p.getValue() instanceof String s && !s.isBlank()) return s;
-		throw new Rejected(file, "field \"" + key + "\" must be a non-empty string");
+		return new Loaded(id, definition.name(), kind, definition.materials(), dyeable, definition.description(), definition.perks(), files);
 	}
 
 	/**

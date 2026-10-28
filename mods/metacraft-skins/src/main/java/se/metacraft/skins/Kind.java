@@ -15,6 +15,7 @@ import net.minecraft.world.item.equipment.Equippable;
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 /**
  * The fixed family of items a skin fits (GLOSSARY: Kind). A skin fits every {@link Material} of its
@@ -39,8 +40,7 @@ public enum Kind {
 	ELYTRA(null, Items.ELYTRA);
 
 	/** A Kind by its {@link #id()}. */
-	public static final Codec<Kind> CODEC = Codec.STRING.comapFlatMap(
-			id -> byId(id).map(DataResult::success).orElseGet(() -> DataResult.error(() -> "\"" + id + "\" is not a Kind")), Kind::id);
+	public static final Codec<Kind> CODEC = Codec.STRING.comapFlatMap(Kind::read, Kind::id);
 
 	private final TagKey<Item> tag;
 	private final Item icon;
@@ -67,6 +67,12 @@ public enum Kind {
 
 	public static Optional<Kind> byId(String id) {
 		return Arrays.stream(values()).filter(k -> k.id().equals(id)).findFirst();
+	}
+
+	/** {@link #byId}, or an error listing the Kinds there are. */
+	public static DataResult<Kind> read(String id) {
+		return byId(id).map(DataResult::success).orElseGet(() -> DataResult.error(() -> "unknown kind \"" + id + "\" (one of: "
+				+ Arrays.stream(values()).map(Kind::id).collect(Collectors.joining(", ")) + ")"));
 	}
 
 	/** The one Kind whose Look has two models: an icon and an in-hand model. */
