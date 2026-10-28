@@ -23,7 +23,7 @@ public final class Feedback {
 
 	/** A Claim, or an admin's grant: the same message either way. */
 	public static void claimed(ServerPlayer player, String skinName) {
-		tell(player, Component.literal("✨ You now own " + skinName + "! Open /skins to apply it.").withStyle(ChatFormatting.GOLD));
+		tell(player, Component.literal("✨ You now own " + skinName + "! Open /itemskins to apply it.").withStyle(ChatFormatting.GOLD));
 		sound(player, SoundEvents.UI_TOAST_CHALLENGE_COMPLETE);
 	}
 
@@ -81,9 +81,9 @@ public final class Feedback {
 				case ALREADY_OWNED -> player + " already owns " + skin + ".";
 				case NOT_OWNED -> player + " doesn't own " + skin + ".";
 				case NOT_APPLIED -> skin + " is on no item.";
-				case UNKNOWN_SKIN -> "There's no skin " + skin + ". /skins list shows them all.";
+				case UNKNOWN_SKIN -> "There's no skin " + skin + ". /itemskins list shows them all.";
 				case DORMANT_SKIN -> skin + " is Dormant: " + dormantReason.orElse("its definition didn't load") + ".";
-				case DAMAGED_FILE -> player + "'s skins file is damaged and is never overwritten; fix it first. /skins info " + player + " says what's wrong.";
+				case DAMAGED_FILE -> player + "'s skins file is damaged and is never overwritten; fix it first. /itemskins info " + player + " says what's wrong.";
 				case SAVE_FAILED -> "Couldn't save " + player + "'s skins file, so nothing changed. The server log says why.";
 				case DONE, NO_TOKEN -> throw new IllegalArgumentException("not an admin's refusal: " + result);
 			};

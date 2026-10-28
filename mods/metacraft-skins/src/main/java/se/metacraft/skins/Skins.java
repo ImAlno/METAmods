@@ -54,7 +54,7 @@ import java.util.stream.Stream;
  *   <li>{@code skins-data/players/<uuid>.json}: who owns what, one file per player ({@link OwnershipStore}).</li>
  * </ul>
  * The world folder (its marker stamps applications, {@link WorldMarker}) is given separately.
- * Skins are read only on {@link #reload()}: at server start and on {@code /skins reload}. Player
+ * Skins are read only on {@link #reload()}: at server start and on {@code /itemskins reload}. Player
  * files are read the first time each player is needed and written on every change.
  *
  * <p>A Skinned Item stores only its {@link SkinMarker}. Whether it shows a Look is decided every
@@ -379,7 +379,7 @@ public final class Skins {
 	}
 
 	/**
-	 * Gives each player {@code count} tokens for the skin (an admin's {@code /skins give}); what
+	 * Gives each player {@code count} tokens for the skin (an admin's {@code /itemskins give}); what
 	 * doesn't fit in an inventory drops at that player's feet, for them only to pick up. Refused,
 	 * giving nothing, for an unknown or Dormant skin.
 	 */

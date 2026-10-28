@@ -66,7 +66,7 @@ public final class ClaimMenuTests {
 			SkinMenuTests.click(player, 10);
 			assertThat(player.containerMenu == player.inventoryMenu, "claiming left " + SkinMenuTests.title(player) + " open");
 			assertThat(fx.skins.ownedSkins(player.getUUID()).owns("crown_test") && token.getCount() == 1, "claiming: owns " + fx.skins.ownedSkins(player.getUUID()) + ", " + token);
-			String claimed = "✨ You now own Crown! Open /skins to apply it.";
+			String claimed = "✨ You now own Crown! Open /itemskins to apply it.";
 			assertThat(player.heard.contains(claimed) && player.actionBar.contains(claimed), "the player was told " + player.heard);
 		} finally {
 			helper.getLevel().getServer().getPlayerList().remove(player);

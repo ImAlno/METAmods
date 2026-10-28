@@ -39,6 +39,10 @@ public final class MetacraftSkins implements ModInitializer {
 
 	private static volatile @Nullable Skins skins;
 
+	public static Identifier getID(String id) {
+		return Identifier.fromNamespaceAndPath(MOD_ID, id);
+	}
+
 	@Override
 	public void onInitialize() {
 		SkinMarker.init();
@@ -97,8 +101,8 @@ public final class MetacraftSkins implements ModInitializer {
 			try {
 				loaded.reload();   // logs every rejection; a broken skin never stops the server
 			} catch (RuntimeException e) {
-				// Nor does anything else here: no skins until /skins reload succeeds.
-				LOGGER.error("[{}] could not load the skins; fix the cause and run /skins reload", MOD_ID, e);
+				// Nor does anything else here: no skins until /itemskins reload succeeds.
+				LOGGER.error("[{}] could not load the skins; fix the cause and run /itemskins reload", MOD_ID, e);
 			}
 			skins = loaded;
 		});

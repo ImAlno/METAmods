@@ -27,7 +27,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * The Skin Menu ({@code /skins}): two chest screens, built with sgui, that only ever call the
+ * The Skin Menu ({@code /itemskins}): two chest screens, built with sgui, that only ever call the
  * {@link Skins} module. The player's own inventory below stays visible but locked on both.
  * <ul>
  *   <li><b>"Your Skins"</b> (6 rows): rows 1–5 the player's owned, non-Dormant skins, 45 a page,
@@ -148,7 +148,7 @@ public final class SkinMenu {
 		if (candidates.isEmpty()) {
 			gui.setSlot(MIDDLE, new GuiElementBuilder(Items.BARRIER).setName(Component.literal("You aren't carrying " + skin.fit().aOne()).withStyle(ChatFormatting.RED))
 					.addLoreLine(Component.literal(name + " fits " + skin.fit().what() + ".").withStyle(ChatFormatting.GRAY))
-					.addLoreLine(Component.literal("Pick one up and run /skins again.").withStyle(ChatFormatting.GRAY)).build());
+					.addLoreLine(Component.literal("Pick one up and run /itemskins again.").withStyle(ChatFormatting.GRAY)).build());
 		}
 		List<Candidate> shown = candidates.subList(page * ITEMS_PER_PAGE, Math.min(candidates.size(), (page + 1) * ITEMS_PER_PAGE));
 		for (int i = 0; i < shown.size(); i++) {

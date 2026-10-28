@@ -4,7 +4,7 @@ Claimable, tradeable item skins for METAcraft: server-side, Fabric + Polymer, Mi
 need nothing but the resource pack the server sends them.
 
 An admin hands out **Skin Tokens**. A player right-clicks one and confirms, which **Claims** the skin:
-they become its **Owner**, and the token is used up. `/skins` opens the **Skin Menu**, where they put the
+they become its **Owner**, and the token is used up. `/itemskins` opens the **Skin Menu**, where they put the
 skin on any item of its **Kind** they carry, which makes it a **Skinned Item**. A skin has a **Look** (a
 Blockbench model sent in the skins resource pack) and may have **Perks**, small effects for its Owner
 while they hold or wear the item. A skin works only while its item is with its Owner; anywhere else the
@@ -72,7 +72,7 @@ config/metacraft-skins/skins/emerald_pick/
   emerald_pick.png.mcmeta   optional: animated textures are copied along
 ```
 
-Drop the export in as it is, then run `/skins reload`. The mod cleans it up as it builds the pack:
+Drop the export in as it is, then run `/itemskins reload`. The mod cleans it up as it builds the pack:
 
 - every texture reference is rewritten by its file name to `skins:item/<skin-id>/<name>`, so
   Blockbench's paths (`minecraft:block/gold_block`, `item/foo`, `foo.png`) all find the `.png` beside the
@@ -312,7 +312,7 @@ cooldown): Slowness I on the target for 3s", "On kill: heals 2 hearts". Set `too
 ### What rejects a skin
 
 The whole skin is set aside (Dormant) and the others load as usual. Each rejection is logged with the
-file and the reason, shown to whoever ran `/skins reload`, and listed by `/skins list`:
+file and the reason, shown to whoever ran `/itemskins reload`, and listed by `/itemskins list`:
 
 - broken json5, or an unknown field anywhere;
 - a missing `name`, `kind` or `look`, an unknown Kind, or the wrong `look` shape for the Kind;
@@ -330,8 +330,8 @@ file and the reason, shown to whoever ran `/skins reload`, and listed by `/skins
 
 ## Reloading and the pack
 
-Skins are read at server start and by `/skins reload`, and never by vanilla `/reload`, so reloading data
-packs never pushes a resource pack by surprise. `/skins reload`:
+Skins are read at server start and by `/itemskins reload`, and never by vanilla `/reload`, so reloading data
+packs never pushes a resource pack by surprise. `/itemskins reload`:
 
 1. re-reads every skin folder and the settings file;
 2. rebuilds the skins pack;
@@ -354,13 +354,13 @@ choose when players see a loading screen: batch Look changes into one reload.
 Delivery: with metacraft-resource-packs the skins pack is a separate pack, sent at join with the
 others; the last three builds stay downloadable, so a player who was sent one just before another
 reload still gets it. Without metacraft-resource-packs the files go into the Polymer pack, which a
-reload rebuilds and re-sends (if Polymer is already building it, run `/skins reload` again once it is
+reload rebuilds and re-sends (if Polymer is already building it, run `/itemskins reload` again once it is
 done). The pack is required exactly when the server's packs are (`PolymerResourcePackUtils.isRequired()`).
 
 ## Settings
 
 `config/metacraft-skins.json5`. metacraft-config writes it on first start with both keys commented out
-(so the defaults, both on, apply); write a key with a value to change it. `/skins reload` re-reads it;
+(so the defaults, both on, apply); write a key with a value to change it. `/itemskins reload` re-reads it;
 vanilla `/reload` doesn't.
 
 ```json5
@@ -382,15 +382,15 @@ vanilla level to fall back on when no permissions mod is installed. Skin ids tab
 
 | Command | Node | Default |
 | --- | --- | --- |
-| `/skins` | `metacraft-skins:menu` | everyone |
-| `/skins give <targets> <skin> [count]` | `metacraft-skins:give` | gamemasters |
-| `/skins info <player>` | `metacraft-skins:info` | gamemasters |
-| `/skins list` | `metacraft-skins:list` | gamemasters |
-| `/skins grant <player> <skin>` | `metacraft-skins:grant` | admins |
-| `/skins revoke <player> <skin>` | `metacraft-skins:revoke` | admins |
-| `/skins reload` | `metacraft-skins:reload` | admins |
+| `/itemskins` | `metacraft-skins:menu` | everyone |
+| `/itemskins give <targets> <skin> [count]` | `metacraft-skins:give` | gamemasters |
+| `/itemskins info <player>` | `metacraft-skins:info` | gamemasters |
+| `/itemskins list` | `metacraft-skins:list` | gamemasters |
+| `/itemskins grant <player> <skin>` | `metacraft-skins:grant` | admins |
+| `/itemskins revoke <player> <skin>` | `metacraft-skins:revoke` | admins |
+| `/itemskins reload` | `metacraft-skins:reload` | admins |
 
-- **`/skins`** opens the player's Skin Menu.
+- **`/itemskins`** opens the player's Skin Menu.
 - **`give`** gives 1 to 64 Skin Tokens (default 1) to online players. What doesn't fit drops at their feet,
   except for a player in creative, who loses the overflow as with vanilla `/give`. Unknown and Dormant
   ids are refused. You get a confirmation; the players get no message. The item is
@@ -412,7 +412,7 @@ vanilla level to fall back on when no permissions mod is installed. Skin ids tab
   user cache first, then (in online mode) Mojang.
 - There is no force-remove: only the Owner takes a skin off an item. Use `revoke` to take the skin away.
 
-Tokens can come from anywhere that hands out items (a shop, a crate plugin); `/skins give` is the only
+Tokens can come from anywhere that hands out items (a shop, a crate plugin); `/itemskins give` is the only
 source this mod has.
 
 ## Dormant skins and permanent ids
@@ -420,12 +420,12 @@ source this mod has.
 A skin is **Dormant** while its folder is missing or its definition fails to load. Nothing about it is
 deleted:
 
-- its Owners keep it (the Skin Menu hides it; `/skins info` shows it as Dormant);
+- its Owners keep it (the Skin Menu hides it; `/itemskins info` shows it as Dormant);
 - its Skinned Items keep their marker but look vanilla and have no Perks; a Dormant Dyeable Hat keeps
   its helmet's dye too (drawn without it until the skin is back);
-- its tokens read "Unknown skin token: <id>" and can't be claimed, and `/skins give` refuses it.
+- its tokens read "Unknown skin token: <id>" and can't be claimed, and `/itemskins give` refuses it.
 
-Fix the definition (or put the folder back) and run `/skins reload`, and everything comes back
+Fix the definition (or put the folder back) and run `/itemskins reload`, and everything comes back
 unchanged.
 
 **Ids are permanent.** The folder name is the id stored in every player file, token and Skinned Item.
@@ -459,10 +459,10 @@ Owners keep the skin and can apply it to an item of the new Kind.
   after that, and every change writes it whole. Edit files only while the server is stopped.
 - **Damaged files are never overwritten.** A file that doesn't parse, or has a field this mod doesn't
   know, is logged; until it's fixed that player has no skins, and their Claims and applies are refused.
-  `/skins info` says what's wrong. It's read again on every look, so a fix takes effect at once.
+  `/itemskins info` says what's wrong. It's read again on every look, so a fix takes effect at once.
 - Each application carries the world's stamp from `<world>/metacraft-skins.json`. In a fresh world (or
   any other world) the stamps don't match, so every skin reads Unapplied there ("Applied in another
-  world" in `/skins info`) with no admin step, and Owners apply them again.
+  world" in `/itemskins info`) with no admin step, and Owners apply them again.
 
 There are no merge, import or export commands, and no migration between online- and offline-mode
 UUIDs.
@@ -503,7 +503,7 @@ Rules that answer most support questions:
   plain). The inventory's own 2×2 grid counts as with them as well. Anywhere else the item is **Away**:
   lent to another player, in a chest, barrel, shulker box, hopper, furnace, crafter, brewing stand,
   dispenser or other storage, dropped, in an item frame, on an armour stand, or inside a bundle or
-  shulker box item (even one the Owner carries). An Away item keeps its skin, and `/skins info` and the
+  shulker box item (even one the Owner carries). An Away item keeps its skin, and `/itemskins info` and the
   Skin Menu still say Applied. It's drawn plain and does nothing until it's back with its Owner; then it
   works again at once, with no old Look left on anyone's screen.
 - **Duplicated copies** (a creative clone, a dupe) all carry the skin until the Owner moves or removes it;

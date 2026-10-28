@@ -2,7 +2,7 @@ package se.metacraft.skins;
 
 import java.time.Instant;
 
-/** One skin a player owns, as {@code /skins info} shows it: its id, when it was claimed (or granted), and its state. */
+/** One skin a player owns, as {@code /itemskins info} shows it: its id, when it was claimed (or granted), and its state. */
 public record OwnedSkin(String id, Instant claimed, State state) {
 	public enum State {
 		/** On an item in this world. */

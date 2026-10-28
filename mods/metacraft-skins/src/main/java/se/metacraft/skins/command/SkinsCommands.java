@@ -28,7 +28,6 @@ import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.commands.arguments.GameProfileArgument;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.permissions.PermissionLevel;
 import net.minecraft.server.players.NameAndId;
@@ -42,11 +41,11 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
- * {@code /skins}: one permission node per command (Fabric's Permission API, so LuckPerms can
+ * {@code /itemskins}: one permission node per command (Fabric's Permission API, so LuckPerms can
  * delegate each), with a vanilla level to fall back on. Skin ids tab-complete everywhere. The
  * subcommands so far:
  * <ul>
- *   <li>{@code /skins} alone ({@code metacraft-skins:menu}, everyone): opens the player's Skin Menu;</li>
+ *   <li>{@code /itemskins} alone ({@code metacraft-skins:menu}, everyone): opens the player's Skin Menu;</li>
  *   <li>{@code list} ({@code metacraft-skins:list}, gamemasters): every skin, its Kind, any Materials it's limited to and whether
  *       it's a Dyeable Hat ({@code cowboy_hat (helmet: leather, dyeable)}), and why a Dormant one failed;</li>
  *   <li>{@code reload} ({@code metacraft-skins:reload}, admins): re-read the skins and settings and rebuild the pack;
@@ -69,32 +68,32 @@ public final class SkinsCommands {
 			new SimpleCommandExceptionType(Component.literal("Name just one player"));
 	private static final SimpleCommandExceptionType NO_MENU =
 			new SimpleCommandExceptionType(Component.literal("You don't have permission to use the Skin Menu"));
-	private static final Predicate<CommandSourceStack> MENU = node("menu", PermissionLevel.ALL);
+	private static final Predicate<CommandSourceStack> MENU = PermissionPredicates.require(MetacraftSkins.getID("menu"), PermissionLevel.ALL);
 	private static final DateTimeFormatter CLAIM_DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm 'UTC'").withZone(ZoneOffset.UTC);
 
 	public static void init(Supplier<Skins> skins) {
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> dispatcher.register(
-				Commands.literal("skins")
+				Commands.literal("itemskins")
 						// Not a requires on the root, which would hide every subcommand from a player denied the menu.
 						.executes(ctx -> menu(ctx, get(skins)))
-						.then(Commands.literal("list").requires(node("list", PermissionLevel.GAMEMASTERS))
+						.then(Commands.literal("list").requires(PermissionPredicates.require(MetacraftSkins.getID("list"), PermissionLevel.GAMEMASTERS))
 								.executes(ctx -> list(ctx, get(skins))))
-						.then(Commands.literal("reload").requires(node("reload", PermissionLevel.ADMINS))
+						.then(Commands.literal("reload").requires(PermissionPredicates.require(MetacraftSkins.getID("reload"), PermissionLevel.ADMINS))
 								.executes(ctx -> reload(ctx, get(skins))))
-						.then(Commands.literal("give").requires(node("give", PermissionLevel.GAMEMASTERS))
+						.then(Commands.literal("give").requires(PermissionPredicates.require(MetacraftSkins.getID("give"), PermissionLevel.GAMEMASTERS))
 								.then(Commands.argument("targets", EntityArgument.players())
 										.then(Commands.argument("skin", StringArgumentType.word()).suggests(skinIds(skins, false))
 												.executes(ctx -> give(ctx, get(skins), 1))
 												.then(Commands.argument("count", IntegerArgumentType.integer(1, 64))
 														.executes(ctx -> give(ctx, get(skins), IntegerArgumentType.getInteger(ctx, "count")))))))
-						.then(Commands.literal("info").requires(node("info", PermissionLevel.GAMEMASTERS))
+						.then(Commands.literal("info").requires(PermissionPredicates.require(MetacraftSkins.getID("info"), PermissionLevel.GAMEMASTERS))
 								.then(Commands.argument("player", GameProfileArgument.gameProfile())
 										.executes(ctx -> info(ctx, get(skins)))))
-						.then(Commands.literal("grant").requires(node("grant", PermissionLevel.ADMINS))
+						.then(Commands.literal("grant").requires(PermissionPredicates.require(MetacraftSkins.getID("grant"), PermissionLevel.ADMINS))
 								.then(Commands.argument("player", GameProfileArgument.gameProfile())
 										.then(Commands.argument("skin", StringArgumentType.word()).suggests(skinIds(skins, false))
 												.executes(ctx -> grant(ctx, get(skins))))))
-						.then(Commands.literal("revoke").requires(node("revoke", PermissionLevel.ADMINS))
+						.then(Commands.literal("revoke").requires(PermissionPredicates.require(MetacraftSkins.getID("revoke"), PermissionLevel.ADMINS))
 								.then(Commands.argument("player", GameProfileArgument.gameProfile())
 										.then(Commands.argument("skin", StringArgumentType.word()).suggests(skinIds(skins, true))
 												.executes(ctx -> revoke(ctx, get(skins))))))));
@@ -113,10 +112,6 @@ public final class SkinsCommands {
 		Collection<NameAndId> named = GameProfileArgument.getGameProfiles(ctx, "player");
 		if (named.size() != 1) throw ONE_PLAYER.create();
 		return named.iterator().next();
-	}
-
-	private static Predicate<CommandSourceStack> node(String command, PermissionLevel fallback) {
-		return PermissionPredicates.require(Identifier.fromNamespaceAndPath(MetacraftSkins.MOD_ID, command), fallback);
 	}
 
 	private static Skins get(Supplier<Skins> skins) throws CommandSyntaxException {
@@ -178,7 +173,7 @@ public final class SkinsCommands {
 		String id = StringArgumentType.getString(ctx, "skin");
 		OwnershipChange result = skins.giveTokens(targets, id, count);
 		if (result != OwnershipChange.DONE) {
-			ctx.getSource().sendFailure(Component.literal(result == OwnershipChange.UNKNOWN_SKIN ? "There's no skin " + id + ". /skins list shows them all."
+			ctx.getSource().sendFailure(Component.literal(result == OwnershipChange.UNKNOWN_SKIN ? "There's no skin " + id + ". /itemskins list shows them all."
 					: id + " is Dormant, so it has no tokens: " + skins.skin(id).flatMap(SkinSummary::dormantReason).orElse("its definition didn't load") + "."));
 			return 0;
 		}

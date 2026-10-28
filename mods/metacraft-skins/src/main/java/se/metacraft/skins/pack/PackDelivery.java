@@ -52,7 +52,7 @@ public final class PackDelivery {
 	}
 
 	/**
-	 * Sends the newest pack to everyone online, after {@code /skins reload} changed it; returns how
+	 * Sends the newest pack to everyone online, after {@code /itemskins reload} changed it; returns how
 	 * many players it went to. Without metacraft-resource-packs the Polymer pack is rebuilt first.
 	 */
 	public static int pushToAll(MinecraftServer server, Skins skins) {
@@ -64,7 +64,7 @@ public final class PackDelivery {
 			return players.size();
 		}
 		if (PolymerResourcePackMod.alreadyGeneration) {
-			MetacraftSkins.LOGGER.warn("[{}] the Polymer pack is being built already; run /skins reload again once it is done", MetacraftSkins.MOD_ID);
+			MetacraftSkins.LOGGER.warn("[{}] the Polymer pack is being built already; run /itemskins reload again once it is done", MetacraftSkins.MOD_ID);
 			return 0;
 		}
 		PolymerResourcePackMod.generateAndCall(server, false, message -> MetacraftSkins.LOGGER.info("[{}] {}", MetacraftSkins.MOD_ID, message.getString()),

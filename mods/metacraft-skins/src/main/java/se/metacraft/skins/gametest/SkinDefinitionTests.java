@@ -137,7 +137,7 @@ public final class SkinDefinitionTests {
 		helper.succeed();
 	}
 
-	/** {@code /skins list}'s source: every folder with its Kind, and the reason a Dormant one failed. */
+	/** {@code /itemskins list}'s source: every folder with its Kind, and the reason a Dormant one failed. */
 	@GameTest
 	public void allSkinsListsEveryFolderWithDormantReasons(GameTestHelper helper) {
 		SkinFixtures fx = withHealthyNeighbour().lookOnly("pale", "boots");

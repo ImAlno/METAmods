@@ -75,13 +75,13 @@ import static se.metacraft.skins.gametest.SkinFixtures.assertThat;
 
 /**
  * Wiring only, against the server's own Skins pointed at a temporary root for the test:
- * {@code /skins list} and {@code /skins reload} run through the server's command dispatcher and
+ * {@code /itemskins list} and {@code /itemskins reload} run through the server's command dispatcher and
  * are refused below their default permission levels, and the pack reload built downloads from
- * metacraft-resource-packs' pack server at the address players are pushed; {@code /skins grant},
+ * metacraft-resource-packs' pack server at the address players are pushed; {@code /itemskins grant},
  * {@code revoke} and {@code info} work on online and offline players, tell an online one, and
- * tab-complete skin ids; {@code /skins} opens the Skin Menu; a Skinned Item, a vanilla diamond
+ * tab-complete skin ids; {@code /itemskins} opens the Skin Menu; a Skinned Item, a vanilla diamond
  * sword, reaches players through real packet encoders wearing its Look while it's with its Owner; and
- * {@code /skins give} hands out Skin Tokens, which a real right-click claims; a reload that takes a
+ * {@code /itemskins give} hands out Skin Tokens, which a real right-click claims; a reload that takes a
  * Look away re-sends players' items, and only such a reload does; and the server keeps
  * a worn Perk up on its own, ending it soon after the item comes off; and a real melee hit, kill,
  * block break and hurt fire their event Perks. One test, because it swaps
@@ -102,19 +102,19 @@ public final class SkinsCommandTests {
 		Redrawn redrawn;
 		WornPerk worn;
 		try {
-			List<String> reload = run(server, LevelBasedPermissionSet.ADMIN, "skins reload");
+			List<String> reload = run(server, LevelBasedPermissionSet.ADMIN, "itemskins reload");
 			assertThat(reload.stream().anyMatch(l -> l.contains("1 skin loaded")), "reload did not report the loaded skin: " + reload);
 			assertThat(reload.stream().anyMatch(l -> l.contains("hat") && l.contains("unknown kind")), "reload did not report the rejection: " + reload);
 			pack = fx.skins.pack().orElseThrow(() -> SkinFixtures.fail("reload built no pack"));
 
-			List<String> list = run(server, LevelBasedPermissionSet.GAMEMASTER, "skins list");
+			List<String> list = run(server, LevelBasedPermissionSet.GAMEMASTER, "itemskins list");
 			assertThat(list.stream().anyMatch(l -> l.contains("candy_cane_test") && l.contains("sword")), "list lacks candy_cane_test: " + list);
 			assertThat(list.stream().anyMatch(l -> l.contains("hat") && l.contains("Dormant") && l.contains("unknown kind")), "list lacks the Dormant hat: " + list);
 			// A limited skin's Materials follow its Kind, in vanilla order whatever skin.json5's order; an unlimited one is unchanged.
 			fx.limited("cap_list_test", "helmet", "[\"turtle\", \"leather\"]");
 			fx.dyeableHat("dyed_cap_list_test", "[\"leather\"]").dyeableHat("dyed_hat_list_test");
-			run(server, LevelBasedPermissionSet.ADMIN, "skins reload");
-			List<String> limited = run(server, LevelBasedPermissionSet.GAMEMASTER, "skins list");
+			run(server, LevelBasedPermissionSet.ADMIN, "itemskins reload");
+			List<String> limited = run(server, LevelBasedPermissionSet.GAMEMASTER, "itemskins list");
 			assertThat(limited.contains("cap_list_test (helmet: leather, turtle)") && limited.contains("candy_cane_test (sword)"), "the list with Materials: " + limited);
 			// A Dyeable Hat says so, after its Materials if it has any. (One reload for all three, and back: only the last few builds stay downloadable.)
 			assertThat(limited.contains("dyed_cap_list_test (helmet: leather, dyeable)") && limited.contains("dyed_hat_list_test (helmet, dyeable)"),
@@ -122,16 +122,16 @@ public final class SkinsCommandTests {
 			fx.delete("cap_list_test");
 			fx.delete("dyed_cap_list_test");
 			fx.delete("dyed_hat_list_test");
-			run(server, LevelBasedPermissionSet.ADMIN, "skins reload");
+			run(server, LevelBasedPermissionSet.ADMIN, "itemskins reload");
 			ownershipCommands(helper, fx);
 			skinMenuAndSkinnedItemsReachPlayers(helper, fx);
 			tokensAndClaims(helper, fx);
 
 			// Below the defaults: a gamemaster can't reload, a moderator can't list.
 			fx.lookOnly("poop_hat_test", "helmet");
-			run(server, LevelBasedPermissionSet.GAMEMASTER, "skins reload");
+			run(server, LevelBasedPermissionSet.GAMEMASTER, "itemskins reload");
 			assertThat(fx.skins.allSkins().size() == 2, "a gamemaster reloaded the skins");
-			List<String> refused = run(server, LevelBasedPermissionSet.MODERATOR, "skins list");
+			List<String> refused = run(server, LevelBasedPermissionSet.MODERATOR, "itemskins list");
 			assertThat(refused.stream().noneMatch(l -> l.contains("candy_cane_test")), "a moderator got the list: " + refused);
 			redrawn = new Redrawn(helper, fx);
 			worn = new WornPerk(helper, fx);
@@ -219,7 +219,7 @@ public final class SkinsCommandTests {
 			owner.sent(Object.class);
 			viewer.sent(Object.class);
 			fx.file("redraw_cap_test", "redraw_cap_test.json", "{ broken");
-			run(server, LevelBasedPermissionSet.ADMIN, "skins reload");
+			run(server, LevelBasedPermissionSet.ADMIN, "itemskins reload");
 			assertThat(owner.sent(ClientboundContainerSetContentPacket.class).stream().anyMatch(p -> p.containerId() == 0),
 					"a reload that made the cap Dormant didn't re-send the Owner's inventory");
 			List<ClientboundSetEquipmentPacket> worn = viewer.sent(ClientboundSetEquipmentPacket.class).stream().filter(p -> p.getEntity() == owner.getId()).toList();
@@ -228,7 +228,7 @@ public final class SkinsCommandTests {
 					"a reload that made the cap Dormant re-sent the Owner's equipment as " + worn);
 
 			fx.lookOnly("redraw_cap_test", "helmet");
-			run(server, LevelBasedPermissionSet.ADMIN, "skins reload");
+			run(server, LevelBasedPermissionSet.ADMIN, "itemskins reload");
 			assertThat(fx.skins.liveSkin(owner.getItemBySlot(EquipmentSlot.HEAD)).isPresent(), "the fixed cap isn't live");
 			assertThat(owner.sent(ClientboundContainerSetContentPacket.class).isEmpty() && viewer.sent(ClientboundSetEquipmentPacket.class).isEmpty(),
 					"a reload that took no Look away re-sent items");
@@ -328,28 +328,28 @@ public final class SkinsCommandTests {
 		UUID offlineId = UUID.randomUUID();
 		server.services().nameToIdCache().add(new NameAndId(offlineId, offline));
 
-		List<String> granted = run(server, LevelBasedPermissionSet.ADMIN, "skins grant " + offline + " candy_cane_test");
+		List<String> granted = run(server, LevelBasedPermissionSet.ADMIN, "itemskins grant " + offline + " candy_cane_test");
 		assertThat(fx.skins.ownedSkins(offlineId).owns("candy_cane_test"), "grant didn't grant an offline player: " + granted);
-		List<String> info = run(server, LevelBasedPermissionSet.GAMEMASTER, "skins info " + offline);
+		List<String> info = run(server, LevelBasedPermissionSet.GAMEMASTER, "itemskins info " + offline);
 		assertThat(info.stream().anyMatch(l -> l.contains("candy_cane_test") && l.contains("Unapplied") && l.contains(LocalDate.now(ZoneOffset.UTC).toString())),
 				"info lacks the skin, its state or its claim date: " + info);
-		List<String> refused = run(server, LevelBasedPermissionSet.ADMIN, "skins grant " + offline + " hat");
+		List<String> refused = run(server, LevelBasedPermissionSet.ADMIN, "itemskins grant " + offline + " hat");
 		assertThat(refused.stream().anyMatch(l -> l.contains("Dormant")) && !fx.skins.ownedSkins(offlineId).owns("hat"), "granted a Dormant skin: " + refused);
-		run(server, LevelBasedPermissionSet.GAMEMASTER, "skins revoke " + offline + " candy_cane_test");
+		run(server, LevelBasedPermissionSet.GAMEMASTER, "itemskins revoke " + offline + " candy_cane_test");
 		assertThat(fx.skins.ownedSkins(offlineId).owns("candy_cane_test"), "a gamemaster revoked a skin");
-		run(server, LevelBasedPermissionSet.ADMIN, "skins revoke " + offline + " candy_cane_test");
+		run(server, LevelBasedPermissionSet.ADMIN, "itemskins revoke " + offline + " candy_cane_test");
 		assertThat(!fx.skins.ownedSkins(offlineId).owns("candy_cane_test"), "revoke didn't revoke from an offline player");
 
 		SkinFixtures.Listening online = SkinFixtures.join(helper);
 		try {
 			String name = online.getGameProfile().name();
-			run(server, LevelBasedPermissionSet.ADMIN, "skins grant " + name + " candy_cane_test");
+			run(server, LevelBasedPermissionSet.ADMIN, "itemskins grant " + name + " candy_cane_test");
 			assertThat(fx.skins.ownedSkins(online.getUUID()).owns("candy_cane_test"), "grant didn't grant an online player");
 			assertThat(online.heard.stream().anyMatch(l -> l.contains("You now own candy_cane_test skin")), "the online player wasn't told of the grant: " + online.heard);
 			online.getInventory().clearContent();
 			online.getInventory().setItem(0, new ItemStack(Items.DIAMOND_SWORD));
 			fx.skins.apply(online, "candy_cane_test", ItemLocation.hotbar(0));
-			run(server, LevelBasedPermissionSet.ADMIN, "skins revoke " + name + " candy_cane_test");
+			run(server, LevelBasedPermissionSet.ADMIN, "itemskins revoke " + name + " candy_cane_test");
 			assertThat(!fx.skins.ownedSkins(online.getUUID()).owns("candy_cane_test"), "revoke didn't revoke from an online player");
 			assertThat(!online.getInventory().getItem(0).has(SkinMarker.TYPE), "revoking from an online player didn't tidy their sword");
 			assertThat(online.heard.stream().anyMatch(l -> l.contains("candy_cane_test skin was removed from your skins by an admin")),
@@ -358,14 +358,14 @@ public final class SkinsCommandTests {
 			server.getPlayerList().remove(online);
 		}
 
-		for (String command : List.of("skins grant " + offline + " ", "skins revoke " + offline + " c")) {
+		for (String command : List.of("itemskins grant " + offline + " ", "itemskins revoke " + offline + " c")) {
 			List<String> suggested = suggestions(server, command);
 			assertThat(suggested.contains("candy_cane_test"), "\"" + command + "\" suggests " + suggested);
 		}
 	}
 
 	/**
-	 * {@code /skins} opens "Your Skins". And does a Skinned Item reach players right, through the
+	 * {@code /itemskins} opens "Your Skins". And does a Skinned Item reach players right, through the
 	 * real network path? Packets go through each player's own packet encoder, so the mod's packet
 	 * mixin, Polymer's per-viewer client stack and the drawing check all run, and are decoded as a
 	 * vanilla client would. The Owner's inventory slot arrives as a diamond sword wearing the Look and
@@ -381,11 +381,11 @@ public final class SkinsCommandTests {
 			owner.getInventory().setItem(0, new ItemStack(Items.DIAMOND_SWORD));
 			fx.skins.grant(owner.nameAndId(), "candy_cane_test");
 
-			server.getCommands().performPrefixedCommand(owner.createCommandSourceStack(), "skins");
-			assertThat(SkinMenuTests.title(owner).equals("Your Skins"), "/skins opened " + SkinMenuTests.title(owner));
+			server.getCommands().performPrefixedCommand(owner.createCommandSourceStack(), "itemskins");
+			assertThat(SkinMenuTests.title(owner).equals("Your Skins"), "/itemskins opened " + SkinMenuTests.title(owner));
 			SkinMenuTests.click(owner, 0);
 			SkinMenuTests.click(owner, SkinMenuTests.FIRST_ITEM);
-			assertThat(fx.skins.liveSkin(owner.getInventory().getItem(0)).isPresent(), "applying from /skins didn't skin the sword");
+			assertThat(fx.skins.liveSkin(owner.getInventory().getItem(0)).isPresent(), "applying from /itemskins didn't skin the sword");
 
 			ItemStack sword = owner.getInventory().getItem(0);
 			owner.encodeForReal();
@@ -422,7 +422,7 @@ public final class SkinsCommandTests {
 	}
 
 	/**
-	 * {@code /skins give} through the dispatcher; a token reaching its holder as paper with their
+	 * {@code /itemskins give} through the dispatcher; a token reaching its holder as paper with their
 	 * own text; and real right-clicks, as packets through the player's connection: the main hand on
 	 * air opens the claim menu once however many packets the click arrives as; the offhand opens
 	 * nothing; a chest or an item frame clicked with a token opens the claim menu instead of doing
@@ -441,13 +441,13 @@ public final class SkinsCommandTests {
 				player.arrive(helper.absoluteVec(new Vec3(2.5, 1, 2.5)));
 			}
 			String name = air.getGameProfile().name();
-			List<String> gave = run(server, LevelBasedPermissionSet.GAMEMASTER, "skins give " + name + " candy_cane_test 3");
+			List<String> gave = run(server, LevelBasedPermissionSet.GAMEMASTER, "itemskins give " + name + " candy_cane_test 3");
 			assertThat(SkinToken.skinOf(air.getMainHandItem()).equals(Optional.of("candy_cane_test")) && air.getMainHandItem().getCount() == 3,
 					"give gave " + air.getMainHandItem() + ": " + gave);
 			assertThat(gave.contains("Gave 3 Skin Tokens: candy_cane_test skin to " + name + "."), "give confirmed " + gave);
-			List<String> refused = run(server, LevelBasedPermissionSet.GAMEMASTER, "skins give " + name + " hat");
+			List<String> refused = run(server, LevelBasedPermissionSet.GAMEMASTER, "itemskins give " + name + " hat");
 			assertThat(refused.stream().anyMatch(l -> l.contains("Dormant")) && air.getInventory().getItem(1).isEmpty(), "gave a Dormant skin's token: " + refused);
-			run(server, LevelBasedPermissionSet.MODERATOR, "skins give " + name + " candy_cane_test");
+			run(server, LevelBasedPermissionSet.MODERATOR, "itemskins give " + name + " candy_cane_test");
 			assertThat(air.getMainHandItem().getCount() == 3, "a moderator gave tokens");
 
 			ItemStack paper = sentTo(air, air.getMainHandItem(), server);
@@ -506,7 +506,7 @@ public final class SkinsCommandTests {
 
 			// A grant re-sends the inventory, so tokens for the skin say it's owned.
 			blocks.sent(Object.class);
-			run(server, LevelBasedPermissionSet.ADMIN, "skins grant " + blocks.getGameProfile().name() + " candy_cane_test");
+			run(server, LevelBasedPermissionSet.ADMIN, "itemskins grant " + blocks.getGameProfile().name() + " candy_cane_test");
 			assertThat(blocks.sent(ClientboundContainerSetContentPacket.class).stream().anyMatch(p -> p.containerId() == 0), "a grant didn't re-send the inventory");
 		} finally {
 			for (ServerPlayer player : List.of(air, offhand, blocks, entities)) server.getPlayerList().remove(player);

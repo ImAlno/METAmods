@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * One skin folder as {@code /skins list} shows it: its id, its name and Kind (the name only once
+ * One skin folder as {@code /itemskins list} shows it: its id, its name and Kind (the name only once
  * it loads; the Kind when the definition got far enough to name a known one), the Materials it's
  * limited to (once it loads, in vanilla order; empty if it fits every one), whether it's a Dyeable
  * Hat (once it loads), its optional description and Perks (once it loads; no Perks while the

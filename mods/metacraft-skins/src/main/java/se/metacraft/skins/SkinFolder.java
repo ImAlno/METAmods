@@ -76,7 +76,7 @@ public final class SkinFolder {
 		}
 	}
 
-	/** What a definition got as far as naming, for a rejected skin's line in {@code /skins list}. */
+	/** What a definition got as far as naming, for a rejected skin's line in {@code /itemskins list}. */
 	static Optional<Kind> kindIfReadable(Path folder) {
 		try {
 			JsonElement kind = JANKSON.load(Files.readString(folder.resolve(DEFINITION))).get("kind");
