@@ -39,7 +39,7 @@ import static se.metacraft.skins.DefinitionCodecs.withError;
  * reads. Its errors are the reasons a skin is rejected, in words for an admin.
  */
 record SkinDefinition(String name, Optional<SkinName.Gradient> gradient, Kind kind, Optional<List<Material>> materials, Optional<String> description, Release release, List<Perk> perks,
-					  Look look) {
+						Look look) {
 	/**
 	 * The Look: the model file of each slot ({@code model}, or a spear's {@code icon} and
 	 * {@code in_hand}, in that order), and whether it's a Dyeable Hat.
