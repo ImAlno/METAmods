@@ -1,5 +1,7 @@
 package se.metacraft.skins;
 
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.DataResult;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.tags.TagKey;
@@ -35,6 +37,10 @@ public enum Kind {
 	LEGGINGS(ItemTags.LEG_ARMOR, Items.DIAMOND_LEGGINGS),
 	BOOTS(ItemTags.FOOT_ARMOR, Items.DIAMOND_BOOTS),
 	ELYTRA(null, Items.ELYTRA);
+
+	/** A Kind by its {@link #id()}. */
+	public static final Codec<Kind> CODEC = Codec.STRING.comapFlatMap(
+			id -> byId(id).map(DataResult::success).orElseGet(() -> DataResult.error(() -> "\"" + id + "\" is not a Kind")), Kind::id);
 
 	private final TagKey<Item> tag;
 	private final Item icon;

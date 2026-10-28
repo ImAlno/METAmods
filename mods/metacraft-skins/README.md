@@ -446,13 +446,13 @@ Owners keep the skin and can apply it to an item of the new Kind.
   "name": "Alice",
   "skins": {
     "candy_sword": { "claimed": "2026-10-24T10:00:00Z", "application": { "id": "…", "world": "…", "kind": "sword" } },
-    "crown": { "claimed": "2026-10-24T10:05:00Z", "application": null }
+    "crown": { "claimed": "2026-10-24T10:05:00Z" }
   }
 }
 ```
 
 - It's the only record of who owns what. The name is the last one seen, for display only; identity is the
-  UUID.
+  UUID. An Unapplied skin has no `application` (older files' `"application": null` reads the same).
 - **Saved at once** on every Claim, apply, remove, grant and revoke. A Claim saves first and only then
   uses up the token, so a failed save keeps the token.
 - **The running server wins.** A file is read the first time its player is needed and kept in memory

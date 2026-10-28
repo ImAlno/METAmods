@@ -1,5 +1,6 @@
 package se.metacraft.skins;
 
+import com.mojang.serialization.DataResult;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.component.DataComponentType;
@@ -233,10 +234,7 @@ public final class Skins {
 
 	/** A change to the player's record, made by {@code change}; refused, the file left alone, if it's damaged. */
 	private OwnershipChange changing(UUID player, Function<OwnershipStore.PlayerRecord, OwnershipChange> change) {
-		return switch (ownership.read(player)) {
-			case OwnershipStore.Damaged d -> OwnershipChange.DAMAGED_FILE;
-			case OwnershipStore.Readable(var record) -> change.apply(record);
-		};
+		return ownership.read(player).mapOrElse(change, damaged -> OwnershipChange.DAMAGED_FILE);
 	}
 
 	/**
@@ -256,7 +254,7 @@ public final class Skins {
 		if (skin.loaded().isEmpty()) return ApplyResult.refused(ApplyResult.Outcome.DORMANT_SKIN);
 		SkinFolder.Loaded loaded = skin.loaded().get();
 		Kind kind = loaded.kind();
-		if (!(ownership.read(player.getUUID()) instanceof OwnershipStore.Readable(var record))) {
+		if (!(ownership.read(player.getUUID()) instanceof DataResult.Success(var record, _))) {
 			return ApplyResult.refused(ApplyResult.Outcome.DAMAGED_FILE);
 		}
 		OwnershipStore.Owned owned = record.skins().get(skinId);
@@ -302,7 +300,7 @@ public final class Skins {
 	private Optional<Displaced> displaced(ItemStack item) {
 		SkinMarker marker = item.get(SkinMarker.TYPE);
 		if (marker == null) return Optional.empty();
-		if (ownership.read(marker.owner()) instanceof OwnershipStore.Readable(var record) && !isCurrent(record, marker)) return Optional.empty();
+		if (ownership.read(marker.owner()) instanceof DataResult.Success(var record, _) && !isCurrent(record, marker)) return Optional.empty();
 		Entry skin = skins.get(marker.skin());
 		String name = skin == null ? marker.skin() : skin.loaded().map(SkinFolder.Loaded::name).orElse(marker.skin());
 		return Optional.of(new Displaced(marker, name));
@@ -316,7 +314,7 @@ public final class Skins {
 
 	/** Another player's skin this apply replaced: Unapplied in their file, if it's still that application. */
 	private void unapplyReplaced(SkinMarker replaced) {
-		if (!(ownership.read(replaced.owner()) instanceof OwnershipStore.Readable(var record))) {
+		if (!(ownership.read(replaced.owner()) instanceof DataResult.Success(var record, _))) {
 			MetacraftSkins.LOGGER.warn("[{}] {}'s file is damaged, so their replaced skin {} still reads as applied there",
 					MetacraftSkins.MOD_ID, replaced.owner(), replaced.skin());
 			return;
@@ -349,7 +347,7 @@ public final class Skins {
 	 * Skinned Item of theirs shows as its Owner's while they're offline.
 	 */
 	public synchronized void seen(NameAndId profile) {
-		if (!(ownership.read(profile.id()) instanceof OwnershipStore.Readable(var record))) return;
+		if (!(ownership.read(profile.id()) instanceof DataResult.Success(var record, _))) return;
 		if (record.skins().isEmpty() && record.name().isEmpty()) return;   // no file, and none needed
 		if (!record.name().equals(Optional.of(profile.name()))) save(record.named(profile.name()));
 	}
@@ -419,7 +417,7 @@ public final class Skins {
 			return client;
 		}
 		SkinFolder.Loaded loaded = skin.loaded().get();
-		boolean owned = viewer != null && ownership.read(viewer) instanceof OwnershipStore.Readable(var record) && record.skins().containsKey(id);
+		boolean owned = viewer != null && ownership.read(viewer) instanceof DataResult.Success(var record, _) && record.skins().containsKey(id);
 		List<Component> lines = new ArrayList<>(loaded.fit().lore(loaded.dyeable()));
 		lines.addAll(PerkLines.of(inEffect(loaded.perks())));
 		loaded.description().ifPresent(d -> lines.add(plain(d, ChatFormatting.GRAY)));
@@ -443,7 +441,7 @@ public final class Skins {
 		SkinMarker marker = stack.get(SkinMarker.TYPE);
 		if (marker == null || standing(stack, marker) != Standing.LIVE) return Optional.empty();
 		SkinFolder.Loaded loaded = skins.get(marker.skin()).loaded().orElseThrow();
-		Optional<String> ownerName = ownership.read(marker.owner()) instanceof OwnershipStore.Readable(var record) ? record.name() : Optional.empty();
+		Optional<String> ownerName = ownership.read(marker.owner()) instanceof DataResult.Success(var record, _) ? record.name() : Optional.empty();
 		return Optional.of(new LiveSkin(loaded.id(), loaded.name(), loaded.kind(), loaded.dyeable(), loaded.description(), inEffect(loaded.perks()),
 				marker.owner(), ownerName.orElse(marker.owner().toString())));
 	}
@@ -466,7 +464,7 @@ public final class Skins {
 	private Standing standing(ItemInstance item, SkinMarker marker) {
 		Entry skin = skins.get(marker.skin());
 		if (skin == null || skin.loaded().isEmpty()) return Standing.ON_HOLD;
-		if (!(ownership.read(marker.owner()) instanceof OwnershipStore.Readable(var record))) return Standing.ON_HOLD;
+		if (!(ownership.read(marker.owner()) instanceof DataResult.Success(var record, _))) return Standing.ON_HOLD;
 		if (!isCurrent(record, marker)) return Standing.STALE;
 		return fits(skin.loaded().get(), item) ? Standing.LIVE : Standing.NO_LONGER_FITS;
 	}
@@ -501,7 +499,7 @@ public final class Skins {
 	 */
 	private void dropKindChangedApplications() {
 		for (UUID player : ownership.players()) {
-			if (!(ownership.read(player) instanceof OwnershipStore.Readable(var record))) continue;
+			if (!(ownership.read(player) instanceof DataResult.Success(var record, _))) continue;
 			OwnershipStore.PlayerRecord next = record;
 			for (var e : record.skins().entrySet()) {
 				if (e.getValue().application().filter(a -> kindChanged(e.getKey(), a)).isPresent()) next = unapplied(next, e.getKey());
@@ -546,7 +544,7 @@ public final class Skins {
 			if (comesOff(standing)) {
 				stack.remove(SkinMarker.TYPE);
 				reverted++;
-				if (standing == Standing.NO_LONGER_FITS && ownership.read(marker.owner()) instanceof OwnershipStore.Readable(var record)) {
+				if (standing == Standing.NO_LONGER_FITS && ownership.read(marker.owner()) instanceof DataResult.Success(var record, _)) {
 					save(unapplied(record, marker.skin()));
 				}
 			}
@@ -778,11 +776,10 @@ public final class Skins {
 
 	/** What the player owns, online or not, with each skin's claim time and state. */
 	public synchronized PlayerSkins ownedSkins(UUID player) {
-		return switch (ownership.read(player)) {
-			case OwnershipStore.Damaged(var reason) -> new PlayerSkins(player, Optional.empty(), List.of(), Optional.of(reason));
-			case OwnershipStore.Readable(var record) -> new PlayerSkins(player, record.name(), record.skins().entrySet().stream()
-					.map(e -> new OwnedSkin(e.getKey(), e.getValue().claimed(), state(e.getKey(), e.getValue()))).toList(), Optional.empty());
-		};
+		return ownership.read(player).mapOrElse(
+				record -> new PlayerSkins(player, record.name(), record.skins().entrySet().stream()
+						.map(e -> new OwnedSkin(e.getKey(), e.getValue().claimed(), state(e.getKey(), e.getValue()))).toList(), Optional.empty()),
+				damaged -> new PlayerSkins(player, Optional.empty(), List.of(), Optional.of(damaged.message())));
 	}
 
 	private OwnedSkin.State state(String skinId, OwnershipStore.Owned owned) {

@@ -3,10 +3,14 @@ package se.metacraft.skins;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
-import com.google.gson.JsonNull;
-import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
-import com.google.gson.JsonPrimitive;
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.DataResult;
+import com.mojang.serialization.JsonOps;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
+import net.minecraft.core.UUIDUtil;
+import net.minecraft.util.ExtraCodecs;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -15,14 +19,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Instant;
-import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
 import java.util.UUID;
@@ -34,7 +36,7 @@ import java.util.stream.Stream;
  * <pre>{@code
  * { "uuid": "…", "name": "Alice",
  *   "skins": { "candy_sword": { "claimed": "2026-10-24T10:00:00Z", "application": { "id": "…", "world": "…", "kind": "sword" } },
- *              "crown": { "claimed": "…", "application": null } } }
+ *              "crown": { "claimed": "…" } } }
  * }</pre>
  * <ul>
  *   <li><b>The running server's copy wins.</b> A file is read once, the first time its player is
@@ -45,24 +47,42 @@ import java.util.stream.Stream;
  *       mod doesn't know, is logged and read again on every look until it's fixed (it's never
  *       cached), and there's no record to save over it.</li>
  * </ul>
+ * The file goes through codecs but not metacraft-lib's {@code JsonHelper}, which can't keep those
+ * promises: its save swallows a failure and overwrites in place, and its load hides why a file failed.
  */
 final class OwnershipStore {
-	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().serializeNulls().disableHtmlEscaping().create();
-	private static final Set<String> RECORD_FIELDS = Set.of("uuid", "name", "skins");
-	private static final Set<String> SKIN_FIELDS = Set.of("claimed", "application");
-	private static final Set<String> APPLICATION_FIELDS = Set.of("id", "world", "kind");
+	private static final Gson GSON = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping().create();
 
 	/**
 	 * An application: its own id (an item carrying another one is stale), the world that stamped it,
 	 * and the skin's Kind when it was applied (after a Kind change it's on no item). Files written
 	 * before the Kind was kept have none, and count as the skin's current Kind.
 	 */
-	record Application(UUID id, UUID world, Optional<Kind> kind) {}
+	record Application(UUID id, UUID world, Optional<Kind> kind) {
+		static final Codec<Application> CODEC = StrictCodec.of(RecordCodecBuilder.mapCodec(instance -> instance.group(
+				UUIDUtil.STRING_CODEC.fieldOf("id").forGetter(Application::id),
+				UUIDUtil.STRING_CODEC.fieldOf("world").forGetter(Application::world),
+				Kind.CODEC.optionalFieldOf("kind").forGetter(Application::kind)
+		).apply(instance, Application::new)));
+	}
 
-	record Owned(Instant claimed, Optional<Application> application) {}
+	/** An owned skin; Unapplied without an {@code application}. */
+	record Owned(Instant claimed, Optional<Application> application) {
+		static final Codec<Owned> CODEC = StrictCodec.of(RecordCodecBuilder.mapCodec(instance -> instance.group(
+				ExtraCodecs.INSTANT_ISO8601.fieldOf("claimed").forGetter(Owned::claimed),
+				Application.CODEC.optionalFieldOf("application").forGetter(Owned::application)
+		).apply(instance, Owned::new)));
+	}
 
 	/** A player's record; {@code skins} is sorted by id. */
 	record PlayerRecord(UUID uuid, Optional<String> name, SortedMap<String, Owned> skins) {
+		static final Codec<PlayerRecord> CODEC = StrictCodec.of(RecordCodecBuilder.mapCodec(instance -> instance.group(
+				UUIDUtil.STRING_CODEC.fieldOf("uuid").forGetter(PlayerRecord::uuid),
+				Codec.STRING.optionalFieldOf("name").forGetter(PlayerRecord::name),
+				Codec.unboundedMap(Codec.STRING, Owned.CODEC).<SortedMap<String, Owned>>xmap(m -> Collections.unmodifiableSortedMap(new TreeMap<>(m)), m -> m)
+						.fieldOf("skins").forGetter(PlayerRecord::skins)
+		).apply(instance, PlayerRecord::new)));
+
 		static PlayerRecord empty(UUID uuid) {
 			return new PlayerRecord(uuid, Optional.empty(), Collections.emptySortedMap());
 		}
@@ -83,14 +103,6 @@ final class OwnershipStore {
 			return new PlayerRecord(uuid, Optional.of(lastKnownName), skins);
 		}
 	}
-
-	/** What a look at a player's file found. */
-	sealed interface Read permits Readable, Damaged {}
-
-	record Readable(PlayerRecord record) implements Read {}
-
-	/** The file can't be used: why, in words for an admin. */
-	record Damaged(String reason) implements Read {}
 
 	private final Path dir;
 	private final Map<UUID, PlayerRecord> cache = new HashMap<>();
@@ -125,31 +137,31 @@ final class OwnershipStore {
 		return dir.resolve(player + ".json");
 	}
 
-	synchronized Read read(UUID player) {
+	/** The player's record (an empty one if they have no file), or why their file is damaged, in words for an admin. */
+	synchronized DataResult<PlayerRecord> read(UUID player) {
 		PlayerRecord cached = cache.get(player);
-		if (cached != null) return new Readable(cached);
+		if (cached != null) return DataResult.success(cached);
 		Path path = file(player);
-		try {
-			PlayerRecord record = Files.exists(path) ? parse(player, Files.readString(path, StandardCharsets.UTF_8)) : PlayerRecord.empty(player);
-			cache.put(player, record);
-			if (loggedDamage.remove(player) != null) MetacraftSkins.LOGGER.info("[{}] {} reads again", MetacraftSkins.MOD_ID, path);
-			return new Readable(record);
-		} catch (IOException | RuntimeException e) {
-			String reason = e.getMessage() != null ? e.getMessage() : e.toString();
-			if (!reason.equals(loggedDamage.put(player, reason))) {
-				MetacraftSkins.LOGGER.error("[{}] {} is damaged and will not be overwritten; until it's fixed this player has no skins and their "
-						+ "skin actions are refused: {}", MetacraftSkins.MOD_ID, path, reason);
-			}
-			return new Damaged(reason);
-		}
+		return (Files.exists(path) ? parse(player, path) : DataResult.success(PlayerRecord.empty(player)))
+				.ifSuccess(record -> {
+					cache.put(player, record);
+					if (loggedDamage.remove(player) != null) MetacraftSkins.LOGGER.info("[{}] {} reads again", MetacraftSkins.MOD_ID, path);
+				})
+				.ifError(damage -> {
+					if (!damage.message().equals(loggedDamage.put(player, damage.message()))) {
+						MetacraftSkins.LOGGER.error("[{}] {} is damaged and will not be overwritten; until it's fixed this player has no skins and their "
+								+ "skin actions are refused: {}", MetacraftSkins.MOD_ID, path, damage.message());
+					}
+				});
 	}
 
 	/** Writes the record whole and only then makes it the copy in memory. */
 	synchronized void save(PlayerRecord record) throws IOException {
+		String json = GSON.toJson(PlayerRecord.CODEC.encodeStart(JsonOps.INSTANCE, record).getOrThrow(IOException::new));
 		Path path = file(record.uuid());
 		Files.createDirectories(dir);
 		Path tmp = path.resolveSibling(path.getFileName() + ".tmp");
-		Files.writeString(tmp, GSON.toJson(encode(record)) + "\n", StandardCharsets.UTF_8);
+		Files.writeString(tmp, json + "\n", StandardCharsets.UTF_8);
 		try {
 			Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
 		} catch (AtomicMoveNotSupportedException e) {
@@ -158,84 +170,17 @@ final class OwnershipStore {
 		cache.put(record.uuid(), record);
 	}
 
-	private static JsonObject encode(PlayerRecord record) {
-		JsonObject json = new JsonObject();
-		json.addProperty("uuid", record.uuid().toString());
-		json.add("name", record.name().<JsonElement>map(JsonPrimitive::new).orElse(JsonNull.INSTANCE));
-		JsonObject skins = new JsonObject();
-		record.skins().forEach((id, owned) -> {
-			JsonObject skin = new JsonObject();
-			skin.addProperty("claimed", owned.claimed().toString());
-			skin.add("application", owned.application().<JsonElement>map(a -> {
-				JsonObject application = new JsonObject();
-				application.addProperty("id", a.id().toString());
-				application.addProperty("world", a.world().toString());
-				a.kind().ifPresent(k -> application.addProperty("kind", k.id()));
-				return application;
-			}).orElse(JsonNull.INSTANCE));
-			skins.add(id, skin);
-		});
-		json.add("skins", skins);
-		return json;
-	}
-
-	private static PlayerRecord parse(UUID player, String text) throws IOException {
-		JsonObject json = object(JsonParser.parseString(text), "the file");
-		onlyFields(json, RECORD_FIELDS, "the file");
-		UUID uuid = uuid(json.get("uuid"), "uuid");
-		if (!uuid.equals(player)) throw new IOException("its uuid " + uuid + " is not the one in its file name");
-		JsonElement name = json.get("name");
-		Optional<String> lastKnownName = name == null || name.isJsonNull() ? Optional.empty() : Optional.of(string(name, "name"));
-		SortedMap<String, Owned> skins = new TreeMap<>();
-		for (Map.Entry<String, JsonElement> entry : object(json.get("skins"), "skins").entrySet()) {
-			String where = "skins." + entry.getKey();
-			JsonObject skin = object(entry.getValue(), where);
-			onlyFields(skin, SKIN_FIELDS, where);
-			Instant claimed;
-			try {
-				claimed = Instant.parse(string(skin.get("claimed"), where + ".claimed"));
-			} catch (DateTimeParseException e) {
-				throw new IOException(where + ".claimed is not a time: " + e.getParsedString());
-			}
-			JsonElement app = skin.get("application");
-			Optional<Application> application = Optional.empty();
-			if (app != null && !app.isJsonNull()) {
-				JsonObject a = object(app, where + ".application");
-				onlyFields(a, APPLICATION_FIELDS, where + ".application");
-				Optional<Kind> kind = Optional.empty();
-				if (a.has("kind")) {
-					String id = string(a.get("kind"), where + ".application.kind");
-					kind = Optional.of(Kind.byId(id).orElseThrow(() -> new IOException(where + ".application.kind is not a Kind: " + id)));
-				}
-				application = Optional.of(new Application(uuid(a.get("id"), where + ".application.id"), uuid(a.get("world"), where + ".application.world"), kind));
-			}
-			skins.put(entry.getKey(), new Owned(claimed, application));
-		}
-		return new PlayerRecord(uuid, lastKnownName, Collections.unmodifiableSortedMap(skins));
-	}
-
-	private static JsonObject object(JsonElement element, String where) throws IOException {
-		if (element == null || !element.isJsonObject()) throw new IOException(where + " is not a JSON object");
-		return element.getAsJsonObject();
-	}
-
-	private static String string(JsonElement element, String where) throws IOException {
-		if (element == null || !element.isJsonPrimitive() || !element.getAsJsonPrimitive().isString()) throw new IOException(where + " is not a string");
-		return element.getAsString();
-	}
-
-	private static UUID uuid(JsonElement element, String where) throws IOException {
-		String text = string(element, where);
+	/** The whole record or an error, never a partial one: saved, it would lose what it left out. */
+	private static DataResult<PlayerRecord> parse(UUID player, Path path) {
+		JsonElement json;
 		try {
-			return UUID.fromString(text);
-		} catch (IllegalArgumentException e) {
-			throw new IOException(where + " is not a UUID: " + text);
+			json = JsonParser.parseString(Files.readString(path, StandardCharsets.UTF_8));
+		} catch (IOException | JsonParseException e) {
+			return DataResult.error(() -> e.getMessage() != null ? e.getMessage() : e.toString());
 		}
-	}
-
-	private static void onlyFields(JsonObject object, Set<String> known, String where) throws IOException {
-		for (String key : object.keySet()) {
-			if (!known.contains(key)) throw new IOException(where + " has an unknown field \"" + key + "\"");
-		}
+		return PlayerRecord.CODEC.parse(JsonOps.INSTANCE, json)
+				.mapOrElse(DataResult::success, error -> DataResult.<PlayerRecord>error(error.messageSupplier()))
+				.flatMap(record -> record.uuid().equals(player) ? DataResult.success(record)
+						: DataResult.error(() -> "its uuid " + record.uuid() + " is not the one in its file name"));
 	}
 }

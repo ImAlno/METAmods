@@ -125,7 +125,36 @@ public final class OwnershipTests {
 		JsonObject skin = file.getAsJsonObject("skins").getAsJsonObject("candy_sword_test");
 		assertThat(skin != null, "no candy_sword_test: " + file);
 		assertThat(Instant.parse(skin.get("claimed").getAsString()) != null, "claimed: " + file);
-		assertThat(skin.has("application") && skin.get("application").isJsonNull(), "an Unapplied skin's application should be none: " + file);
+		assertThat(!skin.has("application"), "an Unapplied skin should have no application: " + file);
+		helper.succeed();
+	}
+
+	/** Files written before codecs held "name": null and "application": null; they read as no name and Unapplied. */
+	@GameTest
+	public void anOlderFileWithNullsStillReads(GameTestHelper helper) {
+		SkinFixtures fx = SkinFixtures.create().lookOnly("candy_sword_test", "sword");
+		fx.reload();
+		UUID harry = UUID.randomUUID();
+		fx.playerFile(harry, "{ \"uuid\": \"" + harry + "\", \"name\": null, "
+				+ "\"skins\": { \"candy_sword_test\": { \"claimed\": \"2026-01-01T12:00:00Z\", \"application\": null } } }");
+		PlayerSkins skins = fx.skins.ownedSkins(harry);
+		assertThat(skins.damage().isEmpty() && skins.owns("candy_sword_test"), "an older file reads as " + skins);
+		helper.succeed();
+	}
+
+	/** One broken skin damages the whole file: a record without it, saved, would lose that skin for good. */
+	@GameTest
+	public void aFileWithOneBrokenSkinIsDamagedWhole(GameTestHelper helper) {
+		SkinFixtures fx = SkinFixtures.create().lookOnly("candy_sword_test", "sword").lookOnly("crown_test", "helmet");
+		fx.reload();
+		NameAndId ivy = new NameAndId(UUID.randomUUID(), "Ivy");
+		String broken = "{ \"uuid\": \"" + ivy.id() + "\", \"name\": \"Ivy\", \"skins\": { "
+				+ "\"candy_sword_test\": { \"claimed\": \"2026-01-01T12:00:00Z\" }, \"crown_test\": { \"claimed\": \"yesterday\" } } }";
+		fx.playerFile(ivy.id(), broken);
+		PlayerSkins skins = fx.skins.ownedSkins(ivy.id());
+		assertThat(skins.damage().isPresent() && skins.skins().isEmpty(), "a file with a broken skin reads as " + skins);
+		assertThat(fx.skins.revoke(ivy, "candy_sword_test") == OwnershipChange.DAMAGED_FILE, "revoked from a damaged file");
+		assertThat(SkinFixtures.read(fx.playerFile(ivy.id())).equals(broken), "the damaged file was overwritten");
 		helper.succeed();
 	}
 
