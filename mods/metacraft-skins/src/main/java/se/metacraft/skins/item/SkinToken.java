@@ -1,6 +1,9 @@
-package se.metacraft.skins;
+package se.metacraft.skins.item;
 
 import com.mojang.serialization.Codec;
+import se.metacraft.skins.MetacraftSkins;
+import se.metacraft.skins.SkinFolder;
+import se.metacraft.skins.Skins;
 import eu.pb4.polymer.core.api.item.PolymerItem;
 import eu.pb4.polymer.core.api.other.PolymerComponent;
 import net.fabricmc.fabric.api.networking.v1.context.PacketContext;
@@ -46,7 +49,7 @@ public final class SkinToken extends Item implements PolymerItem {
 	}
 
 	/** Registers the item and its component, at mod initialisation (the component hidden from clients). */
-	static void init() {
+	public static void init() {
 		PolymerComponent.registerDataComponent(SKIN);
 	}
 

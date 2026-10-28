@@ -14,7 +14,7 @@ import se.metacraft.skins.OwnershipChange;
 import se.metacraft.skins.PlayerSkins;
 import se.metacraft.skins.ReloadReport;
 import se.metacraft.skins.SkinSummary;
-import se.metacraft.skins.SkinToken;
+import se.metacraft.skins.item.SkinToken;
 import se.metacraft.skins.Skins;
 import se.metacraft.skins.pack.PackDelivery;
 import se.metacraft.skins.ui.Feedback;

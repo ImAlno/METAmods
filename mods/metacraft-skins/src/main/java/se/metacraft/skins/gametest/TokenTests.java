@@ -3,7 +3,7 @@ package se.metacraft.skins.gametest;
 import eu.pb4.polymer.core.api.item.PolymerItemUtils;
 import se.metacraft.skins.OwnedSkin;
 import se.metacraft.skins.OwnershipChange;
-import se.metacraft.skins.SkinToken;
+import se.metacraft.skins.item.SkinToken;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.component.DataComponents;

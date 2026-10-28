@@ -2,6 +2,7 @@ package se.metacraft.skins;
 
 import eu.pb4.polymer.core.api.item.PolymerItemUtils;
 import se.metacraft.skins.command.SkinsCommands;
+import se.metacraft.skins.item.SkinToken;
 import se.metacraft.skins.pack.PackDelivery;
 import se.metacraft.skins.ui.ClaimMenu;
 import net.fabricmc.api.ModInitializer;

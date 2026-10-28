@@ -9,7 +9,7 @@ import se.metacraft.skins.OwnershipChange;
 import se.metacraft.skins.PerkLines;
 import se.metacraft.skins.SkinFolder;
 import se.metacraft.skins.SkinSummary;
-import se.metacraft.skins.SkinToken;
+import se.metacraft.skins.item.SkinToken;
 import se.metacraft.skins.Skins;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;

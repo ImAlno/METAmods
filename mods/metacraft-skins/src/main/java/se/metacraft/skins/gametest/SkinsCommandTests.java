@@ -9,7 +9,7 @@ import io.netty.buffer.Unpooled;
 import se.metacraft.skins.ItemLocation;
 import se.metacraft.skins.MetacraftSkins;
 import se.metacraft.skins.SkinMarker;
-import se.metacraft.skins.SkinToken;
+import se.metacraft.skins.item.SkinToken;
 import se.metacraft.skins.Skins;
 import se.metacraft.skins.SkinsPack;
 import se.metacraft.skins.compat.resource_packs.ResourcePacksCompat;

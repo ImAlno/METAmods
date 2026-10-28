@@ -3,6 +3,7 @@ package se.metacraft.skins;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import com.mojang.serialization.JsonOps;
+import se.metacraft.skins.item.SkinToken;
 import net.minecraft.SharedConstants;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.packs.PackType;

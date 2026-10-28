@@ -1,6 +1,6 @@
 package se.metacraft.skins.gametest;
 
-import se.metacraft.skins.SkinToken;
+import se.metacraft.skins.item.SkinToken;
 import se.metacraft.skins.ui.ClaimMenu;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.core.component.DataComponents;

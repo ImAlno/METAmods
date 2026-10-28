@@ -25,6 +25,7 @@ import net.minecraft.world.item.equipment.Equippable;
 import net.minecraft.world.phys.Vec3;
 import org.jspecify.annotations.Nullable;
 import se.metacraft.config.container.ConfigContainer;
+import se.metacraft.skins.item.SkinToken;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
