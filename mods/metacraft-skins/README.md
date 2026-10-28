@@ -56,7 +56,15 @@ skins-data/players/<uuid>.json     who owns what, one file per player
 world/metacraft-skins.json         the world's stamp (see "Ownership data")
 ```
 
-The mod ships no skins: each one is a folder the admin adds, as below.
+Each skin is a folder the admin adds, as below. The mod ships a starter set of Look-only skins and puts
+them in `config/metacraft-skins/skins/` the first time the server starts without that folder:
+
+- helmets: `cowboy_hat`, `crusader_helmet`, `plague_mask`, `plague_mask_dark`, `plague_mask_silver`,
+  `pumpkin_hat`, `spider_hat`, `witch_hat`, and the test skins `testblockhat` and `test_cap`;
+- `pumpkin_pickaxe` (a pickaxe) and `bloody_cleaver` (a sword).
+
+Each fits every Material of its Kind. `cowboy_hat` and the two test skins are Dyeable Hats. After that
+first start the folder is yours: delete a skin's folder and it stays gone. The Skin Token's own model and texture ship in the jar and go into the pack on their own.
 
 ## Writing a skin
 

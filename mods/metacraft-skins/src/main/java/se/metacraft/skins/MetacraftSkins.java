@@ -99,6 +99,7 @@ public final class MetacraftSkins implements ModInitializer {
 		});
 		ServerLifecycleEvents.SERVER_STARTING.register(server -> {
 			Skins loaded = Skins.at(server.getServerDirectory(), server.getWorldPath(LevelResource.ROOT));
+			DefaultSkins.installIfMissing(loaded.skinsFolder());
 			try {
 				loaded.reload();   // logs every rejection; a broken skin never stops the server
 			} catch (RuntimeException e) {

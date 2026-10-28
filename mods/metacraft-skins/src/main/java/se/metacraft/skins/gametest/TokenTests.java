@@ -54,7 +54,11 @@ public final class TokenTests {
 		assertThat(client.is(Items.PAPER), "a client gets " + client);
 		assertThat(Identifier.parse("skins:token/skin_token").equals(client.get(DataComponents.ITEM_MODEL)), "the token's model is " + client.get(DataComponents.ITEM_MODEL));
 		assertThat(Integer.valueOf(64).equals(client.get(DataComponents.MAX_STACK_SIZE)), "a client stacks it to " + client.get(DataComponents.MAX_STACK_SIZE));
-		assertThat(SkinFixtures.unzip(fx.pack().zip()).containsKey("assets/skins/items/token/skin_token.json"), "the pack has no token model");
+		var pack = SkinFixtures.unzip(fx.pack().zip());
+		assertThat(pack.containsKey("assets/skins/items/token/skin_token.json"), "the pack has no token item definition");
+		assertThat(SkinFixtures.text(pack, "assets/skins/items/token/skin_token.json").contains("\"skins:token/skin_token\""), "the token isn't drawn with its own model");
+		assertThat(SkinFixtures.text(pack, "assets/skins/models/token/skin_token.json").contains("\"skins:item/skin_token\""), "the token model doesn't use its texture");
+		assertThat(pack.containsKey("assets/skins/textures/item/skin_token.png"), "the pack has no token texture");
 
 		// Paper and gunpowder make a rocket; a token and gunpowder make nothing. A paper-buying trade doesn't take it.
 		var level = helper.getLevel();

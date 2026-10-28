@@ -1,13 +1,21 @@
 package se.metacraft.skins.gametest;
 
+import se.metacraft.skins.DefaultSkins;
 import se.metacraft.skins.Kind;
 import se.metacraft.skins.ReloadReport;
 import se.metacraft.skins.SkinSummary;
 import net.fabricmc.fabric.api.gametest.v1.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static se.metacraft.skins.gametest.SkinFixtures.assertThat;
 
@@ -16,6 +24,39 @@ import static se.metacraft.skins.gametest.SkinFixtures.assertThat;
  * only that skin aside (Dormant, with its reason) and names the file at fault; the rest load.
  */
 public final class SkinDefinitionTests {
+
+	/**
+	 * The skins that ship in the jar go into a new server's skins folder and load, each with its
+	 * Kind, fitting every Material of it, and dyeable where it should be; once the folder is there,
+	 * a deleted one stays deleted.
+	 */
+	@GameTest
+	public void theShippedSkinsLoadOnce(GameTestHelper helper) {
+		Map<String, Kind> kinds = Map.ofEntries(Map.entry("testblockhat", Kind.HELMET), Map.entry("test_cap", Kind.HELMET),
+				Map.entry("cowboy_hat", Kind.HELMET), Map.entry("crusader_helmet", Kind.HELMET), Map.entry("plague_mask", Kind.HELMET),
+				Map.entry("plague_mask_dark", Kind.HELMET), Map.entry("plague_mask_silver", Kind.HELMET), Map.entry("pumpkin_hat", Kind.HELMET),
+				Map.entry("spider_hat", Kind.HELMET), Map.entry("witch_hat", Kind.HELMET),
+				Map.entry("pumpkin_pickaxe", Kind.PICKAXE), Map.entry("bloody_cleaver", Kind.SWORD));
+		Set<String> dyeable = Set.of("testblockhat", "test_cap", "cowboy_hat");
+		SkinFixtures fx = SkinFixtures.create();
+		Path folder = fx.skins.skinsFolder();
+		assertThat(DefaultSkins.installIfMissing(folder), "the shipped skins weren't put in " + folder);
+		ReloadReport report = fx.reload();
+		assertThat(Set.copyOf(report.loaded()).equals(kinds.keySet()) && report.rejections().isEmpty(), "the shipped skins: " + report);
+		for (SkinSummary skin : fx.skins.allSkins()) {
+			assertThat(skin.kind().equals(Optional.of(kinds.get(skin.id()))) && skin.materials().isEmpty() && skin.dyeable() == dyeable.contains(skin.id()),
+					skin.id() + " loaded as " + skin);
+		}
+
+		try (var files = Files.walk(folder.resolve("testblockhat"))) {
+			for (Path file : files.sorted(Comparator.reverseOrder()).toList()) Files.delete(file);
+		} catch (IOException e) {
+			throw new UncheckedIOException(e);
+		}
+		assertThat(!DefaultSkins.installIfMissing(folder), "the shipped skins were put in over an existing folder");
+		assertThat(!fx.reload().loaded().contains("testblockhat"), "a deleted shipped skin came back");
+		helper.succeed();
+	}
 
 	@GameTest
 	public void brokenJson5IsRejected(GameTestHelper helper) {

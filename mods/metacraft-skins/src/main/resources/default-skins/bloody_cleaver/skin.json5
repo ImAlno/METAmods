@@ -1,0 +1,5 @@
+{
+	name: "Bloody Cleaver",
+	kind: "sword",
+	look: { model: "bloody_cleaver.json" },
+}

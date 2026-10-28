@@ -1,0 +1,5 @@
+{
+	name: "Pumpkin Pickaxe",
+	kind: "pickaxe",
+	look: { model: "pumpkin_pickaxe.json" },
+}
