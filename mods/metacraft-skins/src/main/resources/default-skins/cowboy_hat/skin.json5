@@ -1,0 +1,5 @@
+{
+	name: "Cowboy Hat",
+	kind: "helmet",
+	look: { model: "cowboy_hat.json", dyeable: true },
+}

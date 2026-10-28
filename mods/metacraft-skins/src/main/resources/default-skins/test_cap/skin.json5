@@ -1,0 +1,7 @@
+// A test skin that ships with metacraft-skins. Delete this folder to remove it for good.
+{
+	name: "Test Cap",
+	kind: "helmet",
+	description: "A test skin. Dye it like leather.",
+	look: { model: "test_cap.json", dyeable: true },
+}

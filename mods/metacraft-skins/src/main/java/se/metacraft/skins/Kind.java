@@ -1,0 +1,108 @@
+package se.metacraft.skins;
+
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.DataResult;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.tags.ItemTags;
+import net.minecraft.tags.TagKey;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemInstance;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.equipment.Equippable;
+
+import java.util.Arrays;
+import java.util.Locale;
+import java.util.Optional;
+import java.util.stream.Collectors;
+
+/**
+ * The fixed family of items a skin fits (GLOSSARY: Kind). A skin fits every {@link Material} of its
+ * Kind unless it's limited to some of them; this is only the Kind test. Membership is the
+ * vanilla item tag where there is one, so other mods' items count when they tag them; the elytra
+ * has no tag and is anything that glides from the chest slot. Anything that stacks is never a
+ * member, and neither are the bow, crossbow, fishing rod, shield, trident and the small tools:
+ * no Kind's tag holds them.
+ */
+public enum Kind {
+	SWORD(ItemTags.SWORDS, Items.DIAMOND_SWORD),
+	AXE(ItemTags.AXES, Items.DIAMOND_AXE),
+	PICKAXE(ItemTags.PICKAXES, Items.DIAMOND_PICKAXE),
+	SHOVEL(ItemTags.SHOVELS, Items.DIAMOND_SHOVEL),
+	HOE(ItemTags.HOES, Items.DIAMOND_HOE),
+	MACE(ItemTags.MACE_ENCHANTABLE, Items.MACE),
+	SPEAR(ItemTags.SPEARS, Items.DIAMOND_SPEAR),
+	HELMET(ItemTags.HEAD_ARMOR, Items.DIAMOND_HELMET),
+	CHESTPLATE(ItemTags.CHEST_ARMOR, Items.DIAMOND_CHESTPLATE),
+	LEGGINGS(ItemTags.LEG_ARMOR, Items.DIAMOND_LEGGINGS),
+	BOOTS(ItemTags.FOOT_ARMOR, Items.DIAMOND_BOOTS),
+	ELYTRA(null, Items.ELYTRA);
+
+	/** A Kind by its {@link #id()}. */
+	public static final Codec<Kind> CODEC = Codec.STRING.comapFlatMap(Kind::read, Kind::id);
+
+	private final TagKey<Item> tag;
+	private final Item icon;
+
+	Kind(TagKey<Item> tag, Item icon) {
+		this.tag = tag;
+		this.icon = icon;
+	}
+
+	/** As written in {@code skin.json5}, and as players read it ("Fits any sword"). */
+	public String id() {
+		return name().toLowerCase(Locale.ROOT);
+	}
+
+	/** "swords", "axes", "leggings": for "Fits diamond and netherite swords". */
+	public String plural() {
+		return isPair() ? id() : id() + "s";
+	}
+
+	/** Leggings and boots: named as a pair, already plural, so with no "a" and no added "s" ("leather boots"). */
+	public boolean isPair() {
+		return this == LEGGINGS || this == BOOTS;
+	}
+
+	public static Optional<Kind> byId(String id) {
+		return Arrays.stream(values()).filter(k -> k.id().equals(id)).findFirst();
+	}
+
+	/** {@link #byId}, or an error listing the Kinds there are. */
+	public static DataResult<Kind> read(String id) {
+		return byId(id).map(DataResult::success).orElseGet(() -> DataResult.error(() -> "unknown kind \"" + id + "\" (one of: "
+				+ Arrays.stream(values()).map(Kind::id).collect(Collectors.joining(", ")) + ")"));
+	}
+
+	/** The one Kind whose Look has two models: an icon and an in-hand model. */
+	public boolean isSpear() {
+		return this == SPEAR;
+	}
+
+	/** A hat: its Look is also drawn on the wearer's head. */
+	public boolean isHat() {
+		return this == HELMET;
+	}
+
+	/** The Kind's diamond item (the mace and elytra: their one item); a skin is shown on {@link Fit#icon()}. */
+	public Item icon() {
+		return icon;
+	}
+
+	/**
+	 * Is this item (a stack, or one held inside a shulker box or bundle) of this Kind? Read off the
+	 * real (server) item, never a stack that stacks.
+	 */
+	public boolean fits(ItemInstance item) {
+		if (item.count() <= 0 || item.getMaxStackSize() > 1) return false;
+		if (tag != null) return item.is(tag);
+		Equippable equippable = item.get(DataComponents.EQUIPPABLE);
+		return item.get(DataComponents.GLIDER) != null && equippable != null && equippable.slot() == EquipmentSlot.CHEST;
+	}
+
+	/** The Kind an item belongs to, if any. */
+	public static Optional<Kind> of(ItemStack stack) {
+		return Arrays.stream(values()).filter(k -> k.fits(stack)).findFirst();
+	}
+}

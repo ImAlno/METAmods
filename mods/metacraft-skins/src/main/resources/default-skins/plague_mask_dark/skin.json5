@@ -1,0 +1,5 @@
+{
+	name: "Dark Plague Mask",
+	kind: "helmet",
+	look: { model: "plague_mask_dark.json" },
+}

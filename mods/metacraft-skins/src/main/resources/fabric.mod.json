@@ -1,0 +1,54 @@
+{
+	"schemaVersion": 1,
+	"id": "metacraft-skins",
+	"version": "${version}",
+	"name": "METAcraft Skins",
+	"description": "Claimable, tradeable item skins for vanilla clients: a Look from a served resource pack, and optional Perks. Admins add skins by dropping folders into the config.",
+	"authors": [
+		"Alexander"
+	],
+	"contact": {
+		"sources": "${git_repo}",
+		"homepage": "${website}",
+		"issues": "${issues}"
+	},
+	"license": "MIT",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"se.metacraft.skins.MetacraftSkins"
+		],
+		"fabric-gametest": [
+			"se.metacraft.skins.gametest.SkinDefinitionTests",
+			"se.metacraft.skins.gametest.SkinsPackTests",
+			"se.metacraft.skins.gametest.SkinsCommandTests",
+			"se.metacraft.skins.gametest.OwnershipTests",
+			"se.metacraft.skins.gametest.ApplyTests",
+			"se.metacraft.skins.gametest.ViewTests",
+			"se.metacraft.skins.gametest.SkinMenuTests",
+			"se.metacraft.skins.gametest.TokenTests",
+			"se.metacraft.skins.gametest.ClaimMenuTests",
+			"se.metacraft.skins.gametest.RevertTests",
+			"se.metacraft.skins.gametest.PerkTests",
+			"se.metacraft.skins.gametest.EventPerkTests",
+			"se.metacraft.skins.gametest.DyeingTests",
+			"se.metacraft.skins.gametest.ClickTests"
+		]
+	},
+	"mixins": [
+		"metacraft-skins.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=${loader_version}",
+		"minecraft": "~${minecraft_version}",
+		"java": ">=25",
+		"fabric-api": "*",
+		"metacraft-core": "*",
+		"metacraft-config": "*",
+		"polymer-resource-pack": "*"
+	},
+	"suggests": {
+		"metacraft-resource-packs": "*",
+		"moredyes": "*"
+	}
+}

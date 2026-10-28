@@ -1,0 +1,5 @@
+{
+	name: "Spider Hat",
+	kind: "helmet",
+	look: { model: "spider_hat.json" },
+}
